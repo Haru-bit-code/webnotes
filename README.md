@@ -31,3 +31,9 @@ Any static-friendly Next.js host works, e.g. `npx vercel deploy --prod`.
 
 ## Stack
 Next.js (App Router), React, Tailwind CSS, marked, KaTeX, Mermaid, highlight.js, DOMPurify, @anthropic-ai/sdk.
+
+## Contributing
+Fork the repo, make your change on a branch and open a pull request.
+
+## License
+[MIT](LICENSE) © 2026 Ansar Kamal
