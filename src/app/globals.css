@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* ---- Theme tokens: edit these to restyle the whole app ---- */
+:root {
+  --bg: #ffffff; --panel: #f6f7f9; --border: #e5e7eb; --text: #111827; --muted: #6b7280;
+  --accent: #6366f1; --font-body: ui-sans-serif, system-ui, sans-serif; --font-size: 16px;
+}
+:root.dark {
+  --bg: #0f1115; --panel: #171a21; --border: #272b34; --text: #e5e7eb; --muted: #9ca3af;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: var(--font-size); }
+.bg-panel { background: var(--panel); }
+.bd { border-color: var(--border); }
+.muted { color: var(--muted); }
+.accent-bg { background: var(--accent); color: #fff; }
+.accent-text { color: var(--accent); }
+.active-row { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.hover-row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+input, textarea, select { background: transparent; color: inherit; outline: none; }
+.btn { border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: 0.85em; }
+.btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+/* Rendered markdown */
+.md h1 { font-size: 1.8em; font-weight: 700; margin: .6em 0 .3em; }
+.md h2 { font-size: 1.4em; font-weight: 700; margin: .6em 0 .3em; }
+.md h3 { font-size: 1.15em; font-weight: 600; margin: .6em 0 .3em; }
+.md p { margin: .5em 0; line-height: 1.65; }
+.md ul { list-style: disc; padding-left: 1.4em; } .md ol { list-style: decimal; padding-left: 1.4em; }
+.md ul.tasks { list-style: none; padding-left: 0; } .md ul.tasks input { margin-right: .4em; }
+.md code { background: var(--panel); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: .9em; }
+.md pre { background: #282c34; color: #abb2bf; padding: 12px; border-radius: 8px; overflow-x: auto; margin: .6em 0; }
+.md pre code { padding: 0; background: none; color: inherit; }
+.md table { border-collapse: collapse; margin: .6em 0; } .md th, .md td { border: 1px solid var(--border); padding: 4px 10px; } .md th { background: var(--panel); }
+.md img { max-width: 100%; }
+.md .blk { margin: .8em 0; max-width: 640px; } .md .blk svg { width: 100%; height: auto; }
+.md .blk-err { color: #ef4444; font-size: .85em; padding: 6px 10px; border: 1px dashed #ef4444; border-radius: 6px; }
+.md pre.mermaid { background: none; color: inherit; text-align: center; } .md pre.mermaid.rendered svg { max-width: 100%; height: auto; }
+.md .katex-display { overflow-x: auto; overflow-y: hidden; }
+.md blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--muted); margin: .5em 0; }
+.md a { color: var(--accent); text-decoration: underline; }
+.md hr { border-color: var(--border); margin: 1em 0; }
+
+.md .sketch { border: 1px solid var(--border); border-radius: 10px; padding: 8px; cursor: pointer; max-width: 720px; }
+.md .sketch:hover { border-color: var(--accent); }
+.md .sketch svg { height: auto; }
+.md .sketch-cap { font-size: .75em; color: var(--muted); margin-bottom: 4px; } .md .sketch-cap span { opacity: .6; }
+
+.cbtn { padding: 4px 8px; }
+@media (pointer: coarse) {
+  .btn { padding: 8px 12px; min-height: 40px; }
+  .cbtn { padding: 8px 12px; min-width: 42px; }
+  .cdot { width: 30px; height: 30px; }
+  input[type="range"] { height: 32px; }
+}
+html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+svg.touch-none { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
