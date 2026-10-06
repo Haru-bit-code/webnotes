@@ -3,7 +3,7 @@ import { El, Note } from "./types";
 
 export type ProviderId = "anthropic" | "groq" | "openrouter" | "openai" | "gemini" | "together" | "mistral" | "ollama" | "custom";
 export type ProviderCfg = { apiKey: string; model: string; baseUrl: string; ctxChars: number };
-export type AISettings = { chat: ProviderId; review: ProviderId | "same"; providers: Record<ProviderId, ProviderCfg>; autoReview: boolean; includeAll: boolean };
+export type AISettings = { chat: ProviderId; review: ProviderId | "same"; reviewModel: string; providers: Record<ProviderId, ProviderCfg>; autoReview: boolean; includeAll: boolean };
 
 type ProviderInfo = { label: string; kind: "anthropic" | "openai"; baseUrl: string; models: string[]; needsKey: boolean; keyUrl: string; hint: string; ctx: number };
 // Model names change often – use "Fetch models" in settings to see what your key can use.
@@ -26,7 +26,7 @@ export const PROVIDER_IDS = Object.keys(PROVIDERS) as ProviderId[];
 
 const blankCfg = (id: ProviderId): ProviderCfg => ({ apiKey: "", model: PROVIDERS[id].models[0] ?? "", baseUrl: PROVIDERS[id].baseUrl, ctxChars: PROVIDERS[id].ctx });
 export const defaultAI: AISettings = {
-  chat: "anthropic", review: "same", autoReview: true, includeAll: true,
+  chat: "anthropic", review: "same", reviewModel: "", autoReview: true, includeAll: true,
   providers: Object.fromEntries(PROVIDER_IDS.map((id) => [id, blankCfg(id)])) as Record<ProviderId, ProviderCfg>,
 };
 
@@ -39,6 +39,7 @@ export function normalizeAI(raw: unknown): AISettings {
   if (typeof r.includeAll === "boolean") out.includeAll = r.includeAll;
   if (typeof r.chat === "string" && r.chat in PROVIDERS) out.chat = r.chat as ProviderId;
   if (typeof r.review === "string" && (r.review === "same" || r.review in PROVIDERS)) out.review = r.review as AISettings["review"];
+  if (typeof r.reviewModel === "string") out.reviewModel = r.reviewModel;
   const pr = r.providers as Record<string, Partial<ProviderCfg>> | undefined;
   if (pr) for (const id of PROVIDER_IDS) if (pr[id]) out.providers[id] = { ...out.providers[id], ...pr[id] };
   return out;
@@ -47,7 +48,9 @@ export function normalizeAI(raw: unknown): AISettings {
 type Which = "chat" | "review";
 export const resolve = (s: AISettings, which: Which): { id: ProviderId; info: ProviderInfo; cfg: ProviderCfg } => {
   const id = which === "review" && s.review !== "same" ? s.review : s.chat;
-  return { id, info: PROVIDERS[id], cfg: s.providers[id] };
+  const cfg = s.providers[id];
+  // insights may use their own model; blank = the provider's regular model
+  return { id, info: PROVIDERS[id], cfg: which === "review" && s.reviewModel.trim() ? { ...cfg, model: s.reviewModel.trim() } : cfg };
 };
 export const isReady = (s: AISettings, which: Which) => { const { info, cfg } = resolve(s, which); return !!cfg.model && (!info.needsKey || !!cfg.apiKey) && (info.kind === "anthropic" || !!cfg.baseUrl); };
 

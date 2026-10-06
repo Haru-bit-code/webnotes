@@ -118,6 +118,10 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
           <label className="flex items-center justify-between gap-2"><span>Live insights use</span>
             <select className="bd rounded border px-2 py-1" value={ai.review} onChange={(e) => setAI({ ...ai, review: e.target.value as AISettings["review"] })}>
               <option value="same">Same as chat</option>{PROVIDER_IDS.map((id) => <option key={id} value={id}>{PROVIDERS[id].label}</option>)}</select></label>
+          <label className="flex items-center justify-between gap-2"><span>Insights model</span>
+            <input list="ai-review-models" className="bd min-w-0 flex-1 rounded border px-2 py-1" placeholder={`Same as ${resolve({ ...ai, reviewModel: "" }, "review").cfg.model || "provider's model"}`}
+              value={ai.reviewModel} onChange={(e) => setAI({ ...ai, reviewModel: e.target.value })} />
+            <datalist id="ai-review-models">{[...new Set([...resolve(ai, "review").info.models, ...(resolve(ai, "review").id === cfgProv ? modelList : [])])].map((m) => <option key={m} value={m} />)}</datalist></label>
           <div className="bd space-y-2 rounded-lg border p-2">
             <label className="flex items-center justify-between gap-2"><b>Set up</b>
               <select className="bd rounded border px-2 py-1" value={cfgProv} onChange={(e) => setCfgProv(e.target.value as ProviderId)}>
@@ -141,7 +145,7 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
             <input type="checkbox" checked={ai.autoReview} onChange={(e) => setAI({ ...ai, autoReview: e.target.checked })} /></label>
           <label className="flex items-center justify-between gap-2"><span>Let it read my other notes</span>
             <input type="checkbox" checked={ai.includeAll} onChange={(e) => setAI({ ...ai, includeAll: e.target.checked })} /></label>
-          <p className="muted text-xs">Now: chat → {resolve(ai, "chat").info.label} · {resolve(ai, "chat").cfg.model || "no model"}; insights → {resolve(ai, "review").info.label}. Used this session: {usage.input.toLocaleString()} in ({usage.cached.toLocaleString()} cached) · {usage.output.toLocaleString()} out tokens (some providers don&apos;t report usage).</p>
+          <p className="muted text-xs">Now: chat → {resolve(ai, "chat").info.label} · {resolve(ai, "chat").cfg.model || "no model"}; insights → {resolve(ai, "review").info.label} · {resolve(ai, "review").cfg.model || "no model"}. Used this session: {usage.input.toLocaleString()} in ({usage.cached.toLocaleString()} cached) · {usage.output.toLocaleString()} out tokens (some providers don&apos;t report usage).</p>
         </div>
       )}
 

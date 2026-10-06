@@ -71,8 +71,9 @@ export function Shape({ e }: { e: El }) {
       const dx = e.dx ?? w * 0.35, dy = e.dy ?? -h * 0.35;
       const L = dx >= 0, B = dy <= 0; // back face is to the right / above → its left and bottom edges are hidden
       const bx = x + dx, by = y + dy, dash = "5 4";
+      let n = 0;
       const ln = (x1: number, y1: number, x2: number, y2: number, hidden = false) =>
-        <line key={`${x1}${y1}${x2}${y2}`} x1={x1} y1={y1} x2={x2} y2={y2} {...common} strokeDasharray={hidden ? dash : undefined} strokeOpacity={hidden ? 0.6 : 1} />;
+        <line key={n++} x1={x1} y1={y1} x2={x2} y2={y2} {...common} strokeDasharray={hidden ? dash : undefined} strokeOpacity={hidden ? 0.6 : 1} />;
       return <g>
         {ln(bx, by, bx + w, by, !B)}{ln(bx, by + h, bx + w, by + h, B)}{ln(bx, by, bx, by + h, L)}{ln(bx + w, by, bx + w, by + h, !L)}
         {ln(x, y, bx, by, L && !B)}{ln(x + w, y, bx + w, by, !L && !B)}{ln(x, y + h, bx, by + h, L && B)}{ln(x + w, y + h, bx + w, by + h, !L && B)}
@@ -254,6 +255,7 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
   const elsRef = useRef(els); elsRef.current = els;
   const drawRef = useRef<El | null>(null);
   const drag = useRef<null | { mode: "draw" | "pan" | "move" | "erase"; sx: number; sy: number; last: Pt; snap?: El[]; moved?: boolean }>(null);
+  const widthSnap = useRef<El[] | null>(null);
   const space = useRef(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const worldRef = useRef<SVGGElement>(null);
@@ -269,6 +271,11 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
   const toWorld = (cx: number, cy: number): Pt => {
     const r = svgRef.current!.getBoundingClientRect();
     return [(cx - r.left - view.x) / view.k, (cy - r.top - view.y) / view.k];
+  };
+
+  const zoomBy = (f: number) => {
+    const r = svgRef.current!.getBoundingClientRect(), mx = r.width / 2, my = r.height / 2;
+    setView((v) => { const k = Math.min(8, Math.max(0.1, v.k * f)); return { k, x: mx - ((mx - v.x) / v.k) * k, y: my - ((my - v.y) / v.k) * k }; });
   };
 
   // wheel: pan, ctrl/pinch: zoom
@@ -328,7 +335,7 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
       return;
     }
     if (tool === "eraser") { drag.current = { mode: "erase", sx: 0, sy: 0, last: p, snap: elsRef.current }; erase(e.clientX, e.clientY); return; }
-    if (tool === "text") { setTextBox({ x: p[0], y: p[1], value: "" }); return; }
+    if (tool === "text") { setTimeout(() => setTextBox({ x: p[0], y: p[1], value: "" }), 0); return; } // after mousedown's focus change, or the box blurs at once
     const t = tool as ElType;
     const isFree = t === "pen" || t === "hl";
     if (!isFree && snapGrid) { p[0] = Math.round(p[0] / 24) * 24; p[1] = Math.round(p[1] / 24) * 24; }
@@ -424,7 +431,9 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
       const ex = window.prompt("Function(s) of x, separated by ;  — optional range after @\nExample:  sin(x); x^2/10 @ -2*pi..2*pi", "sin(x)");
       if (!ex) return;
       try { parsePlotShort(ex); } catch (err) { alert("Invalid: " + (err as Error).message); return; }
-      el = { ...el, expr: ex, w: 1 };
+      const x2 = el.x + Math.sign((el.x2 ?? el.x) - el.x || 1) * Math.max(240, Math.abs((el.x2 ?? el.x) - el.x));
+      const y2 = el.y + Math.sign((el.y2 ?? el.y) - el.y || 1) * Math.max(160, Math.abs((el.y2 ?? el.y) - el.y));
+      el = { ...el, expr: ex, w: 1, x2, y2 };
     }
     commit([...elsRef.current, el]);
     setSel(el.id);
@@ -513,7 +522,10 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
           <button key={c} title={c} onClick={() => { setColor(c); if (selEl) commit(els.map((x) => (x.id === sel ? { ...x, c } : x))); }}
             className="cdot h-5 w-5 rounded-full border-2" style={{ background: c === "auto" ? "var(--text)" : c, borderColor: color === c ? "var(--accent)" : "transparent", outline: "1px solid var(--border)" }} />
         ))}
-        <input type="range" min={1} max={12} value={width} onChange={(e) => setWidth(+e.target.value)} className="w-16" title="Stroke width" />
+        <input type="range" min={1} max={12} value={width} className="w-16" title="Stroke width (also applies to the selected object)"
+          onChange={(e) => { const v = +e.target.value; setWidth(v); if (selEl && selEl.t !== "plot") setEls((cur) => cur.map((x) => (x.id === sel ? (x.t === "text" ? { ...x, fs: 16 + v * 2 } : { ...x, w: x.t === "hl" ? v * 5 : v }) : x))); }}
+          onPointerUp={() => { if (selEl && selEl.t !== "plot") { past.current.push(widthSnap.current ?? els); future.current = []; onChange(elsRef.current); } }}
+          onPointerDown={() => { widthSnap.current = elsRef.current; }} />
         <span className="muted text-xs" title="Stabiliser: higher = smoother lines for shaky mouse/trackpad">〰</span>
         <input type="range" min={0} max={9} value={smooth} onChange={(e) => setSmooth(+e.target.value)} className="w-16" title="Stabiliser: higher = smoother lines for shaky mouse/trackpad" />
         <button className={`${btn} ${snapGrid ? "accent-bg" : ""}`} title="Snap shapes, lines and arrows to the grid" onClick={() => setSnapGrid((v) => !v)}>⌗ snap</button>
@@ -523,9 +535,9 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
         <button className={btn} title="Redo (⇧⌘Z)" onClick={redo}>↷</button>
         <button className={btn} title="Delete selected" onClick={() => { if (sel) { commit(els.filter((x) => x.id !== sel)); setSel(null); } }}>🗑</button>
         <span className="bd mx-1 h-5 border-l" />
-        <button className={btn} title="Zoom out" onClick={() => setView((v) => ({ ...v, k: Math.max(0.1, v.k / 1.25) }))}>−</button>
+        <button className={btn} title="Zoom out" onClick={() => zoomBy(1 / 1.25)}>−</button>
         <button className={btn} title="Reset view" onClick={() => setView({ x: 0, y: 0, k: 1 })}>{Math.round(view.k * 100)}%</button>
-        <button className={btn} title="Zoom in" onClick={() => setView((v) => ({ ...v, k: Math.min(8, v.k * 1.25) }))}>+</button>
+        <button className={btn} title="Zoom in" onClick={() => zoomBy(1.25)}>+</button>
         <button className={btn} title="Background" onClick={() => setGrid(GRIDS[(GRIDS.indexOf(grid) + 1) % GRIDS.length])}>▦ {grid}</button>
         <button className={btn} onClick={() => doExport("png")}>PNG</button>
         <button className={btn} onClick={() => doExport("svg")}>SVG</button>
