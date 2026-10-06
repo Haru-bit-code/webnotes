@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Note } from "@/lib/types";
-import { AISettings, INSIGHT_META, Insight, Msg, PROVIDERS, PROVIDER_IDS, ProviderId, Usage, chatStream, friendlyError, isReady, listModels, resolve, reviewNote, stripThink } from "@/lib/ai";
+import { AISettings, INSIGHT_META, Insight, Msg, PROVIDERS, PROVIDER_IDS, ProviderId, Usage, chatStream, freeFirst, friendlyError, isReady, listModels, resolve, reviewNote, stripThink } from "@/lib/ai";
 import { Preview } from "./Preview";
 
 const QUICK: [string, string][] = [
@@ -123,16 +123,6 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
           <label className="flex items-center justify-between gap-2"><span>Live insights use</span>
             <select className="bd rounded border px-2 py-1" value={ai.review} onChange={(e) => setAI({ ...ai, review: e.target.value as AISettings["review"] })}>
               <option value="same">Same as chat</option>{PROVIDER_IDS.map((id) => <option key={id} value={id}>{PROVIDERS[id].label}</option>)}</select></label>
-          <div className="space-y-1">
-            <div className="flex items-center justify-between gap-2"><span>Insights model</span>
-              <div className="flex min-w-0 flex-1 gap-1">
-                <input list="ai-review-models" className="bd min-w-0 flex-1 rounded border px-2 py-1" placeholder={`Same as ${resolve({ ...ai, reviewModel: "" }, "review").cfg.model || "chat model"}`}
-                  value={ai.reviewModel} onChange={(e) => setAI({ ...ai, reviewModel: e.target.value })} />
-                <datalist id="ai-review-models">{[...new Set([...rv.info.models, ...revList])].map((m) => <option key={m} value={m} />)}</datalist>
-                {rv.info.kind === "openai" && <button className="btn" title="List the models this key can use" onClick={fetchReviewModels}>Fetch models</button>}
-              </div></div>
-            {revMsg && <p className="muted text-xs">{revMsg}</p>}
-          </div>
           <div className="bd space-y-2 rounded-lg border p-2">
             <label className="flex items-center justify-between gap-2"><b>Set up</b>
               <select className="bd rounded border px-2 py-1" value={cfgProv} onChange={(e) => setCfgProv(e.target.value as ProviderId)}>
@@ -143,7 +133,7 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
             {info.kind === "openai" && <input className="bd w-full rounded border px-2 py-1" placeholder="Base URL (…/v1)" value={cfg.baseUrl} onChange={(e) => setCfg({ baseUrl: e.target.value })} />}
             <div className="flex gap-1">
               <input list="ai-models" className="bd min-w-0 flex-1 rounded border px-2 py-1" placeholder="Model name" value={cfg.model} onChange={(e) => setCfg({ model: e.target.value })} />
-              <datalist id="ai-models">{[...new Set([...info.models, ...modelList])].map((m) => <option key={m} value={m} />)}</datalist>
+              <datalist id="ai-models">{freeFirst([...info.models, ...modelList]).map((m) => <option key={m} value={m} />)}</datalist>
               {info.kind === "openai" && <button className="btn" title="List the models this key can use" onClick={fetchModels}>Fetch models</button>}
             </div>
             {modelMsg && <p className="muted text-xs">{modelMsg}</p>}
@@ -151,6 +141,16 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
               <select className="bd rounded border px-2 py-1" value={cfg.ctxChars} onChange={(e) => setCfg({ ctxChars: +e.target.value })}>
                 <option value={0}>None (current note only)</option><option value={12000}>Small (~3k tokens)</option><option value={30000}>Medium (~8k)</option><option value={100000}>Large (~25k)</option></select></label>
             {cfgProv !== "anthropic" && <p className="muted text-xs">Free tiers have small token limits – keep this small if you see rate-limit errors.</p>}
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2"><span>Insights model</span>
+              <div className="flex min-w-0 flex-1 gap-1">
+                <input list="ai-review-models" className="bd min-w-0 flex-1 rounded border px-2 py-1" placeholder={`Same as ${resolve({ ...ai, reviewModel: "" }, "review").cfg.model || "chat model"}`}
+                  value={ai.reviewModel} onChange={(e) => setAI({ ...ai, reviewModel: e.target.value })} />
+                <datalist id="ai-review-models">{freeFirst([...rv.info.models, ...revList]).map((m) => <option key={m} value={m} />)}</datalist>
+                {rv.info.kind === "openai" && <button className="btn" title="List the models this key can use" onClick={fetchReviewModels}>Fetch models</button>}
+              </div></div>
+            {revMsg && <p className="muted text-xs">{revMsg}</p>}
           </div>
           <label className="flex items-center justify-between gap-2"><span>Auto-review when I pause typing</span>
             <input type="checkbox" checked={ai.autoReview} onChange={(e) => setAI({ ...ai, autoReview: e.target.checked })} /></label>

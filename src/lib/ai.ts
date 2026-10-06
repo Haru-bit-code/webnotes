@@ -179,6 +179,8 @@ async function oaiRequest(cfg: ProviderCfg, messages: OAIMsg[], stream: boolean,
   return { text, usage };
 }
 
+// de-duplicated, with free models (ids ending in ":free") first, otherwise alphabetical order is kept
+export const freeFirst = (ids: string[]) => { const u = [...new Set(ids)]; return [...u.filter((m) => m.endsWith(":free")), ...u.filter((m) => !m.endsWith(":free"))]; };
 export async function listModels(s: AISettings, id: ProviderId): Promise<string[]> {
   const info = PROVIDERS[id], cfg = s.providers[id];
   if (info.kind === "anthropic") return info.models;
