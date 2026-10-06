@@ -21,7 +21,7 @@ const marked = new Marked(
         if (l === "chart") return renderChart(text);
         if (l === "plot") return renderPlot(text);
         if (l === "sketch") return sketchHtml(text, ctxNotes);
-        if (l === "mermaid") return `<pre class="mermaid">${esc(text)}</pre>`;
+        if (l === "mermaid") return `<pre class="mermaid" data-src="${encodeURIComponent(text)}">${esc(text)}</pre>`;
         const html = l && hljs.getLanguage(l) ? hljs.highlight(text, { language: l }).value : esc(text);
         return `<pre><code class="hljs">${html}</code></pre>`;
       },
@@ -39,5 +39,5 @@ export function renderMarkdown(src: string, notes: Note[] = []): string {
     hooked = true;
   }
   const html = marked.parse(src) as string;
-  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true }, ADD_TAGS: ["clipPath"], ADD_ATTR: ["target", "clip-path", "data-sketch-id"] });
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true }, ADD_TAGS: ["clipPath"], ADD_ATTR: ["target", "clip-path", "data-sketch-id", "data-src"] });
 }
