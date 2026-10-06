@@ -8,7 +8,7 @@ const lastSvg = new Map<string, string>(); // theme + diagram position → last 
 let mermaidQueue: Promise<void> = Promise.resolve();
 const srcOf = (n: HTMLElement) => (n.dataset.src ? decodeURIComponent(n.dataset.src) : n.textContent || "");
 
-export function Preview({ body, notes = [], onOpenNote, className = "" }: { body: string; notes?: Note[]; onOpenNote?: (id: string) => void; className?: string }) {
+export function Preview({ body, notes = [], onOpenNote, onWikiLink, onToggleTask, className = "" }: { body: string; notes?: Note[]; onOpenNote?: (id: string) => void; onWikiLink?: (title: string) => void; onToggleTask?: (index: number) => void; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderMarkdown(body, notes) || '<p class="muted">Nothing to preview</p>', [body, notes]);
 
@@ -19,6 +19,7 @@ export function Preview({ body, notes = [], onOpenNote, className = "" }: { body
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<HTMLElement[]>([]);
   useLayoutEffect(() => {
+    ref.current?.querySelectorAll<HTMLInputElement>("input[data-task]").forEach((c) => { c.disabled = !onToggleTask; });
     const nodes = Array.from(ref.current?.querySelectorAll<HTMLElement>("pre.mermaid") ?? []).filter((n) => !handled.current.has(n));
     if (!nodes.length) return;
     const dark = document.documentElement.classList.contains("dark"), th = dark ? "d" : "l";
@@ -64,5 +65,13 @@ export function Preview({ body, notes = [], onOpenNote, className = "" }: { body
   });
 
   return <div ref={ref} className={`md ${className}`}
-    onClick={(e) => { const id = (e.target as HTMLElement).closest<HTMLElement>("[data-sketch-id]")?.dataset.sketchId; if (id) onOpenNote?.(id); }} dangerouslySetInnerHTML={{ __html: html }} />;
+    onClick={(e) => {
+      const el = e.target as HTMLElement;
+      const wiki = el.closest<HTMLElement>("[data-wiki]")?.dataset.wiki;
+      if (wiki) { e.preventDefault(); onWikiLink?.(decodeURIComponent(wiki)); return; }
+      if (el instanceof HTMLInputElement && el.hasAttribute("data-task") && onToggleTask) {
+        onToggleTask(Array.from(ref.current!.querySelectorAll("input[data-task]")).indexOf(el)); return;
+      }
+      const id = el.closest<HTMLElement>("[data-sketch-id]")?.dataset.sketchId; if (id) onOpenNote?.(id);
+    }} dangerouslySetInnerHTML={{ __html: html }} />;
 }

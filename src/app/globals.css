@@ -55,3 +55,7 @@ input, textarea, select { background: transparent; color: inherit; outline: none
 }
 html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
 svg.touch-none { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.md a.wikilink { color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent); }
+.md a.wikilink.missing { opacity: .65; border-bottom-style: dotted; }
+.md input[data-task] { margin-right: .25rem; cursor: pointer; }
+.md input[data-task]:disabled { cursor: default; }

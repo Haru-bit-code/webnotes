@@ -26,6 +26,7 @@ export type Note = {
   tags: string[];
   pinned: boolean;
   archived: boolean;
+  deletedAt?: number;                              // set = in the trash (purged after 30 days)
   createdAt: number;
   updatedAt: number;
 };

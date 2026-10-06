@@ -1,14 +1,15 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { useNotes } from "@/lib/store";
+import { useNotes, TRASH_DAYS } from "@/lib/store";
 import { Note } from "@/lib/types";
 import { Editor } from "@/components/Editor";
 import { SettingsPanel } from "@/components/Settings";
 import { TEMPLATES } from "@/lib/templates";
+import { useBackup } from "@/lib/backup";
 import { AIPanel } from "@/components/AIPanel";
 import { AISettings, defaultAI, normalizeAI } from "@/lib/ai";
 
-type View = { kind: "all" } | { kind: "archive" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
+type View = { kind: "all" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
 const FONTS = {
   sans: "ui-sans-serif, system-ui, sans-serif",
@@ -17,7 +18,9 @@ const FONTS = {
 };
 
 export default function Home() {
-  const { notes, settings, setSettings, ready, create, update, remove, importNotes } = useNotes();
+  const { notes, settings, setSettings, ready, create, update, remove, restore, purge, emptyTrash, importNotes } = useNotes();
+  const backup = useBackup(notes, ready, importNotes);
+  const live = useMemo(() => notes.filter((n) => !n.deletedAt), [notes]); // everything except the trash
   const [view, setView] = useState<View>({ kind: "all" });
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -57,13 +60,15 @@ export default function Home() {
     return () => mq.removeEventListener("change", apply);
   }, [settings]);
 
-  const folders = useMemo(() => [...new Set(notes.filter((n) => !n.archived && n.folder).map((n) => n.folder))].sort(), [notes]);
-  const tags = useMemo(() => [...new Set(notes.filter((n) => !n.archived).flatMap((n) => n.tags))].sort(), [notes]);
+  const folders = useMemo(() => [...new Set(live.filter((n) => !n.archived && n.folder).map((n) => n.folder))].sort(), [live]);
+  const tags = useMemo(() => [...new Set(live.filter((n) => !n.archived).flatMap((n) => n.tags))].sort(), [live]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return notes
       .filter((n) => {
+        if (view.kind === "trash") return !!n.deletedAt;
+        if (n.deletedAt) return false;
         if (view.kind === "archive") return n.archived;
         if (n.archived) return false;
         if (view.kind === "folder") return n.folder === view.name;
@@ -71,7 +76,7 @@ export default function Home() {
         return true;
       })
       .filter((n) => !q || (n.title + " " + n.body + " " + n.tags.join(" ") + " " + (n.drawing ?? []).map((e) => e.text ?? "").join(" ")).toLowerCase().includes(q))
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
+      .sort((a, b) => (view.kind === "trash" ? (b.deletedAt ?? 0) - (a.deletedAt ?? 0) : Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt));
   }, [notes, view, query]);
 
   const current = notes.find((n) => n.id === selected) ?? null;
@@ -87,7 +92,7 @@ export default function Home() {
   const newNote = (init: Partial<Note> = {}) => {
     setShowNew(false);
     const id = create({ folder: view.kind === "folder" ? view.name : "", tags: view.kind === "tag" ? [view.name] : [], ...init });
-    if (view.kind === "archive") setView({ kind: "all" });
+    if (view.kind === "archive" || view.kind === "trash") setView({ kind: "all" });
     setSelected(id);
   };
 
@@ -100,12 +105,13 @@ export default function Home() {
           <span className="accent-text text-lg font-bold">WebNotes</span>
           <button className="btn" onClick={() => setShowSettings(true)}>⚙</button>
         </div>
-        {navItem({ kind: "all" }, "All notes", notes.filter((n) => !n.archived).length)}
-        {navItem({ kind: "archive" }, "Archive", notes.filter((n) => n.archived).length)}
+        {navItem({ kind: "all" }, "All notes", live.filter((n) => !n.archived).length)}
+        {navItem({ kind: "archive" }, "Archive", live.filter((n) => n.archived).length)}
+        {navItem({ kind: "trash" }, "🗑 Trash", notes.length - live.length)}
         {folders.length > 0 && <div className="muted mt-3 text-xs uppercase">Folders</div>}
-        {folders.map((f) => navItem({ kind: "folder", name: f }, "📁 " + f, notes.filter((n) => !n.archived && n.folder === f).length))}
+        {folders.map((f) => navItem({ kind: "folder", name: f }, "📁 " + f, live.filter((n) => !n.archived && n.folder === f).length))}
         {tags.length > 0 && <div className="muted mt-3 text-xs uppercase">Tags</div>}
-        {tags.map((t) => navItem({ kind: "tag", name: t }, "# " + t, notes.filter((n) => !n.archived && n.tags.includes(t)).length))}
+        {tags.map((t) => navItem({ kind: "tag", name: t }, "# " + t, live.filter((n) => !n.archived && n.tags.includes(t)).length))}
       </aside>
 
       <section className={`bd w-full shrink-0 flex-col border-r md:w-72 ${current ? "hidden" : "flex"} ${hideList ? "" : "md:flex"} ${hideList && current ? "" : ""}`}>
@@ -128,13 +134,18 @@ export default function Home() {
           <button className="btn md:hidden" onClick={() => setShowSettings(true)}>⚙</button>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {visible.length === 0 && <p className="muted p-4 text-sm">No notes here yet.</p>}
+          {view.kind === "trash" && (
+            <div className="bd muted flex items-center gap-2 border-b p-2 text-xs">
+              <span className="flex-1">Deleted notes are kept {TRASH_DAYS} days.</span>
+              {visible.length > 0 && <button className="btn" onClick={() => confirm(`Permanently delete ${visible.length} note(s)?`) && (emptyTrash(), setSelected(null))}>Empty trash</button>}
+            </div>)}
+          {visible.length === 0 && <p className="muted p-4 text-sm">{view.kind === "trash" ? "Trash is empty." : "No notes here yet."}</p>}
           {visible.map((n) => (
             <button key={n.id} onClick={() => setSelected(n.id)}
               className={`hover-row bd block w-full border-b px-3 py-2 text-left ${n.id === selected ? "active-row" : ""}`}>
               <div className="truncate font-medium">{n.pinned && "📌 "}{n.kind === "canvas" && "🎨 "}{n.title || "Untitled"}</div>
               <div className="muted truncate text-xs">{n.kind === "canvas" ? `Canvas · ${n.drawing?.length ?? 0} objects` : n.body.replace(/[#*`>\-\[\]$]/g, "").slice(0, 80) || "Empty note"}</div>
-              <div className="muted mt-0.5 text-[11px]">{new Date(n.updatedAt).toLocaleDateString()}{n.folder && ` · ${n.folder}`}{n.tags.map((t) => ` #${t}`)}</div>
+              <div className="muted mt-0.5 text-[11px]">{n.deletedAt ? `deleted ${new Date(n.deletedAt).toLocaleDateString()}` : new Date(n.updatedAt).toLocaleDateString()}{n.folder && ` · ${n.folder}`}{n.tags.map((t) => ` #${t}`)}</div>
             </button>
           ))}
         </div>
@@ -145,7 +156,7 @@ export default function Home() {
           <div className="flex h-full flex-col">
             <button className="btn m-2 self-start md:hidden" onClick={() => setSelected(null)}>← Back</button>
             <div className="min-h-0 flex-1">
-              <Editor key={current.id} note={current} folders={folders} notes={notes}
+              <Editor key={current.id} note={current} folders={folders} notes={live}
                 extra={<button className={`btn ${showAI ? "accent-bg" : ""}`} title="AI assistant (⌘J)" onClick={() => setShowAI((v) => !v)}>✨ AI</button>}
                 onOpenNote={(id) => { setBack(current.id); setSelected(id); }} onNewSketch={() => { const id = create({ kind: "canvas", drawing: [], title: "Sketch" }); return id; }}
                 leading={<span className="hidden gap-1 md:flex">
@@ -153,7 +164,9 @@ export default function Home() {
                   <button className="btn" title="Toggle note list (⌘\\ hides both)" onClick={() => setHideList((v) => !v)}>{hideList ? "▤" : "⇤"}</button>
                   {back && notes.some((n) => n.id === back) && <button className="btn" onClick={() => { setSelected(back); setBack(null); }}>← back</button>}
                 </span>}
-                onChange={(p) => update(current.id, p)} onDelete={() => { remove(current.id); setSelected(null); }} />
+                onChange={(p) => update(current.id, p)} onDelete={() => { remove(current.id); setSelected(null); }}
+                onRestore={() => { restore(current.id); setView({ kind: "all" }); }} onPurge={() => { purge(current.id); setSelected(null); }}
+                onWikiLink={(title) => { const hit = live.find((n) => n.title.trim().toLowerCase() === title.trim().toLowerCase()); if (hit) { setBack(current.id); setSelected(hit.id); } else if (confirm(`Create a new note called "${title}"?`)) { const id = create({ title }); setBack(current.id); setSelected(id); } }} />
             </div>
           </div>
         ) : (
@@ -163,13 +176,13 @@ export default function Home() {
 
       {showAI && (
         <aside className="fixed inset-0 z-40 md:static md:inset-auto md:z-auto md:w-96 md:shrink-0">
-          <AIPanel ai={ai} setAI={setAI} notes={notes} note={current} onClose={() => setShowAI(false)}
-            onInsert={(text) => current && update(current.id, { body: current.body.replace(/\s*$/, "") + "\n\n" + text + "\n" })} />
+          <AIPanel ai={ai} setAI={setAI} notes={live} note={current} onClose={() => setShowAI(false)}
+            onInsert={(text) => current && update(current.id, { body: (() => { const b = current.body.replace(/\s*$/, ""); const task = /^- \[[ x]\] /.test(text) && /(^|\n)- \[[ x]\] [^\n]*$/.test(b); return b + (task ? "\n" : "\n\n") + text + "\n"; })() })} />
         </aside>
       )}
       {!showAI && !current && <button className="btn fixed bottom-4 right-4 z-30 shadow" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}>✨ AI</button>}
 
-      {showSettings && <SettingsPanel settings={settings} onChange={setSettings} notes={notes} onImport={importNotes} onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsPanel settings={settings} onChange={setSettings} notes={notes} onImport={importNotes} backup={backup} onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
