@@ -48,6 +48,11 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
   const info = PROVIDERS[cfgProv], cfg = ai.providers[cfgProv];
   const fetchModels = async () => { setModelMsg("Fetching…"); try { const m = await listModels(ai, cfgProv); setModelList(m); setModelMsg(`${m.length} models found`); } catch (e) { setModelMsg(friendlyError(e)); } };
   useEffect(() => { setModelList([]); setModelMsg(""); }, [cfgProv]);
+  const rv = resolve(ai, "review");
+  const [revList, setRevList] = useState<string[]>([]);
+  const [revMsg, setRevMsg] = useState("");
+  const fetchReviewModels = async () => { setRevMsg("Fetching…"); try { const m = await listModels(ai, rv.id); setRevList(m); setRevMsg(`${m.length} models found`); } catch (e) { setRevMsg(friendlyError(e)); } };
+  useEffect(() => { setRevList([]); setRevMsg(""); }, [rv.id]);
   const addUse = (u: Usage) => setUsage((p) => ({ input: p.input + u.input, output: p.output + u.output, cached: p.cached + u.cached }));
 
   const runReview = useCallback(async (noteId: string, signature: string) => {
@@ -118,10 +123,16 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
           <label className="flex items-center justify-between gap-2"><span>Live insights use</span>
             <select className="bd rounded border px-2 py-1" value={ai.review} onChange={(e) => setAI({ ...ai, review: e.target.value as AISettings["review"] })}>
               <option value="same">Same as chat</option>{PROVIDER_IDS.map((id) => <option key={id} value={id}>{PROVIDERS[id].label}</option>)}</select></label>
-          <label className="flex items-center justify-between gap-2"><span>Insights model</span>
-            <input list="ai-review-models" className="bd min-w-0 flex-1 rounded border px-2 py-1" placeholder={`Same as ${resolve({ ...ai, reviewModel: "" }, "review").cfg.model || "provider's model"}`}
-              value={ai.reviewModel} onChange={(e) => setAI({ ...ai, reviewModel: e.target.value })} />
-            <datalist id="ai-review-models">{[...new Set([...resolve(ai, "review").info.models, ...(resolve(ai, "review").id === cfgProv ? modelList : [])])].map((m) => <option key={m} value={m} />)}</datalist></label>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2"><span>Insights model</span>
+              <div className="flex min-w-0 flex-1 gap-1">
+                <input list="ai-review-models" className="bd min-w-0 flex-1 rounded border px-2 py-1" placeholder={`Same as ${resolve({ ...ai, reviewModel: "" }, "review").cfg.model || "chat model"}`}
+                  value={ai.reviewModel} onChange={(e) => setAI({ ...ai, reviewModel: e.target.value })} />
+                <datalist id="ai-review-models">{[...new Set([...rv.info.models, ...revList])].map((m) => <option key={m} value={m} />)}</datalist>
+                {rv.info.kind === "openai" && <button className="btn" title="List the models this key can use" onClick={fetchReviewModels}>Fetch models</button>}
+              </div></div>
+            {revMsg && <p className="muted text-xs">{revMsg}</p>}
+          </div>
           <div className="bd space-y-2 rounded-lg border p-2">
             <label className="flex items-center justify-between gap-2"><b>Set up</b>
               <select className="bd rounded border px-2 py-1" value={cfgProv} onChange={(e) => setCfgProv(e.target.value as ProviderId)}>

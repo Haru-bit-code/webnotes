@@ -124,6 +124,7 @@ export const friendlyError = (e: unknown): string => {
     if (/model|only available|not available|harness|agentic/i.test(reason) && e.status !== 401) return `The provider won't serve this model to this app (${e.status}): "${reason}". Your key is probably fine – pick a different model in AI settings (press Fetch models).`;
     if (e.status === 401 || e.status === 403) return `The provider refused the request (${e.status})${reason ? `: "${reason}"` : ""}. Check that the key belongs to this provider, that it was pasted without spaces, and that the model name is allowed for your account (use Fetch models).`;
     if (e.status === 404) return "Model or endpoint not found – check the model name and base URL (try Fetch models).";
+    if (e.status === 402) return "The provider says your credits are too low for this request. Free OpenRouter accounts have very few credits – use a ':free' model, or add credits at openrouter.ai/settings/credits.";
     if (e.status === 429) return "Rate limited (common on free tiers) – wait a moment, or pick a smaller 'Notes context'.";
     if (e.status === 413) return "Too much text for this model – choose a smaller 'Notes context' in settings.";
     return `API error ${e.status}: ${e.message.slice(0, 300)}`;
@@ -145,10 +146,10 @@ export const stripThink = (t: string) => t.replace(/<think>[\s\S]*?(<\/think>|$)
 
 // ---- OpenAI-compatible providers (Groq, OpenRouter, OpenAI, Gemini, Ollama, ...) ----
 type OAIMsg = { role: "system" | "user" | "assistant"; content: string };
-async function oaiRequest(cfg: ProviderCfg, messages: OAIMsg[], stream: boolean, signal: AbortSignal, onText?: (t: string) => void): Promise<{ text: string; usage: Usage }> {
+async function oaiRequest(cfg: ProviderCfg, messages: OAIMsg[], stream: boolean, signal: AbortSignal, onText?: (t: string) => void, maxTokens = 4096): Promise<{ text: string; usage: Usage }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
-  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers, signal, body: JSON.stringify({ model: cfg.model, messages, stream }) });
+  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers, signal, body: JSON.stringify({ model: cfg.model, messages, stream, max_tokens: maxTokens }) });
   if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => res.statusText));
   const mkUsage = (u?: { prompt_tokens?: number; completion_tokens?: number }): Usage => ({ input: u?.prompt_tokens ?? 0, output: u?.completion_tokens ?? 0, cached: 0 });
   if (!stream) {
