@@ -121,11 +121,11 @@ class HttpError extends Error { constructor(public status: number, msg: string) 
 export const friendlyError = (e: unknown): string => {
   if (e instanceof HttpError) {
     const reason = (() => { try { const j = JSON.parse(e.message); return String(j.error?.message ?? j.error ?? j.message ?? ""); } catch { return e.message; } })().slice(0, 200);
+    if (e.status === 429) return `Rate limited${reason ? `: "${reason}"` : ""}. The app already retried a few times. Wait a minute, pick another model (free ones are shared and often busy), or use a smaller 'Notes context'.`;
+    if (e.status === 402) return "The provider says your credits are too low for this request. Free OpenRouter accounts have very few credits – use a ':free' model, or add credits at openrouter.ai/settings/credits.";
     if (/model|only available|not available|harness|agentic/i.test(reason) && e.status !== 401) return `The provider won't serve this model to this app (${e.status}): "${reason}". Your key is probably fine – pick a different model in AI settings (press Fetch models).`;
     if (e.status === 401 || e.status === 403) return `The provider refused the request (${e.status})${reason ? `: "${reason}"` : ""}. Check that the key belongs to this provider, that it was pasted without spaces, and that the model name is allowed for your account (use Fetch models).`;
     if (e.status === 404) return "Model or endpoint not found – check the model name and base URL (try Fetch models).";
-    if (e.status === 402) return "The provider says your credits are too low for this request. Free OpenRouter accounts have very few credits – use a ':free' model, or add credits at openrouter.ai/settings/credits.";
-    if (e.status === 429) return "Rate limited (common on free tiers) – wait a moment, or pick a smaller 'Notes context'.";
     if (e.status === 413) return "Too much text for this model – choose a smaller 'Notes context' in settings.";
     return `API error ${e.status}: ${e.message.slice(0, 300)}`;
   }
@@ -146,10 +146,30 @@ export const stripThink = (t: string) => t.replace(/<think>[\s\S]*?(<\/think>|$)
 
 // ---- OpenAI-compatible providers (Groq, OpenRouter, OpenAI, Gemini, Ollama, ...) ----
 type OAIMsg = { role: "system" | "user" | "assistant"; content: string };
+// ---- retry on rate limits / overload, with backoff (honours Retry-After) ----
+let onRetry: ((msg: string) => void) | null = null;
+export const setRetryListener = (f: ((msg: string) => void) | null) => { onRetry = f; };
+const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((res, rej) => {
+  if (signal.aborted) return rej(new DOMException("Aborted", "AbortError"));
+  const t = setTimeout(res, ms);
+  signal.addEventListener("abort", () => { clearTimeout(t); rej(new DOMException("Aborted", "AbortError")); }, { once: true });
+});
+const MAX_RETRIES = 3;
+async function fetchWithRetry(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init);
+    if ((res.status !== 429 && res.status !== 503) || attempt >= MAX_RETRIES) return res;
+    const ra = Number(res.headers.get("retry-after"));
+    const wait = Math.min(30000, Number.isFinite(ra) && ra > 0 ? ra * 1000 : 2000 * 2 ** attempt);
+    onRetry?.(`${res.status === 429 ? "Rate limited" : "Provider busy"} – retrying in ${Math.ceil(wait / 1000)}s (attempt ${attempt + 1} of ${MAX_RETRIES})…`);
+    await sleep(wait, signal);
+  }
+}
+
 async function oaiRequest(cfg: ProviderCfg, messages: OAIMsg[], stream: boolean, signal: AbortSignal, onText?: (t: string) => void, maxTokens = 4096): Promise<{ text: string; usage: Usage }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
-  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers, signal, body: JSON.stringify({ model: cfg.model, messages, stream, max_tokens: maxTokens }) });
+  const res = await fetchWithRetry(`${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers, signal, body: JSON.stringify({ model: cfg.model, messages, stream, max_tokens: maxTokens }) }, signal);
   if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => res.statusText));
   const mkUsage = (u?: { prompt_tokens?: number; completion_tokens?: number }): Usage => ({ input: u?.prompt_tokens ?? 0, output: u?.completion_tokens ?? 0, cached: 0 });
   if (!stream) {
@@ -207,7 +227,7 @@ export async function chatStream(s: AISettings, notes: Note[], currentId: string
   if (info.kind === "anthropic") {
     const system: Anthropic.TextBlockParam[] = [{ type: "text", text: SYSTEM }];
     if (corpus) system.push({ type: "text", text: corpus, cache_control: { type: "ephemeral" } });
-    const stream = new Anthropic({ apiKey: cfg.apiKey, dangerouslyAllowBrowser: true }).messages.stream({
+    const stream = new Anthropic({ apiKey: cfg.apiKey, dangerouslyAllowBrowser: true, maxRetries: 3 }).messages.stream({
       model: cfg.model, max_tokens: 8000, system,
       messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: userTurn }],
       output_config: { ...effortFor(cfg.model, "medium") },
@@ -246,7 +266,7 @@ export async function reviewNote(s: AISettings, notes: Note[], currentId: string
   if (info.kind === "anthropic") {
     const system: Anthropic.TextBlockParam[] = [{ type: "text", text: SYSTEM }];
     if (corpus) system.push({ type: "text", text: corpus, cache_control: { type: "ephemeral" } });
-    const res = await new Anthropic({ apiKey: cfg.apiKey, dangerouslyAllowBrowser: true }).messages.create({
+    const res = await new Anthropic({ apiKey: cfg.apiKey, dangerouslyAllowBrowser: true, maxRetries: 3 }).messages.create({
       model: cfg.model, max_tokens: 4000, system, messages: [{ role: "user", content: task }],
       output_config: { ...effortFor(cfg.model, "low"), format: { type: "json_schema", schema: SCHEMA } },
     }, { signal });
@@ -256,4 +276,16 @@ export async function reviewNote(s: AISettings, notes: Note[], currentId: string
   const { text, usage } = await oaiRequest(cfg, [{ role: "system", content: SYSTEM + (corpus ? "\n\n" + corpus : "") },
     { role: "user", content: task + `\n\nRespond with ONLY a JSON object, no prose and no code fences, exactly in this shape: {"insights":[{"type":"idea|question|issue|connection|answer","text":"..."}]}` }], false, signal);
   return { insights: parseInsights(stripThink(text)), usage };
+}
+
+// Turn mentions of other notes' titles into [[wiki links]] (used when an insight or reply is added to a note)
+export function linkify(text: string, notes: Note[], skipId?: string): string {
+  const titles = [...new Set(notes.filter((n) => n.id !== skipId && !n.deletedAt && n.title.trim().length >= 3).map((n) => n.title.trim()))].sort((a, b) => b.length - a.length);
+  if (!titles.length) return text;
+  const re = new RegExp(`\\[\\[[^\\]]*\\]\\]|(${titles.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi");
+  return text.replace(re, (m, hit) => {
+    if (!hit) return m; // already a [[link]]
+    const real = titles.find((t) => t.toLowerCase() === hit.toLowerCase()) ?? hit;
+    return `[[${real}]]`;
+  });
 }

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Note } from "@/lib/types";
-import { AISettings, INSIGHT_META, Insight, Msg, PROVIDERS, PROVIDER_IDS, ProviderId, Usage, chatStream, freeFirst, friendlyError, isReady, listModels, resolve, reviewNote, stripThink } from "@/lib/ai";
+import { AISettings, INSIGHT_META, Insight, Msg, PROVIDERS, PROVIDER_IDS, ProviderId, Usage, chatStream, freeFirst, friendlyError, isReady, linkify, listModels, resolve, reviewNote, setRetryListener, stripThink } from "@/lib/ai";
 import { Preview } from "./Preview";
 
 const QUICK: [string, string][] = [
@@ -53,6 +53,9 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
   const [revMsg, setRevMsg] = useState("");
   const fetchReviewModels = async () => { setRevMsg("Fetching…"); try { const m = await listModels(ai, rv.id); setRevList(m); setRevMsg(`${m.length} models found`); } catch (e) { setRevMsg(friendlyError(e)); } };
   useEffect(() => { setRevList([]); setRevMsg(""); }, [rv.id]);
+  const [retryMsg, setRetryMsg] = useState("");
+  useEffect(() => { setRetryListener(setRetryMsg); return () => setRetryListener(null); }, []);
+  useEffect(() => { if (!busy) setRetryMsg(""); }, [busy]);
   const addUse = (u: Usage) => setUsage((p) => ({ input: p.input + u.input, output: p.output + u.output, cached: p.cached + u.cached }));
 
   const runReview = useCallback(async (noteId: string, signature: string) => {
@@ -166,6 +169,7 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
             {t}{t === "insights" && cards.length > 0 ? ` (${cards.length})` : ""}</button>))}
       </div>
 
+      {retryMsg && busy && <div className="muted mx-3 mt-2 text-xs">⏳ {retryMsg}</div>}
       {error && <div className="mx-3 mt-2 rounded border border-red-500/50 p-2 text-xs text-red-400">{error}</div>}
 
       {tab === "insights" ? (
@@ -182,7 +186,8 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
               <Preview body={c.text} notes={notes} className="!p-0 text-[0.92em]" />
               <div className="mt-1 flex gap-1">
                 <button className="btn" onClick={() => send(`Tell me more about this, and help me act on it: "${c.text}"`)}>Discuss</button>
-                {canInsert && <button className="btn" onClick={() => onInsert(`> ${INSIGHT_META[c.type].icon} **${INSIGHT_META[c.type].label}:** ${c.text.replace(/\n/g, " ")}`)}>Add to note</button>}
+                {canInsert && <button className="btn" title="Append as a quote; mentions of your other notes become [[links]]" onClick={() => onInsert(`> ${INSIGHT_META[c.type].icon} **${INSIGHT_META[c.type].label}:** ${linkify(c.text.replace(/\n/g, " "), notes, note?.id)}`)}>Add to note</button>}
+                {canInsert && (c.type === "idea" || c.type === "issue" || c.type === "question") && <button className="btn" title="Append as a checklist item" onClick={() => onInsert(`- [ ] ${linkify(c.text.replace(/\n/g, " "), notes, note?.id)}`)}>☐ As task</button>}
               </div>
             </div>))}
         </div>
@@ -195,7 +200,7 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
             ) : (
               <div key={i}>
                 {m.content ? <Preview body={stripThink(m.content)} notes={notes} className="!p-0" /> : <span className="muted">…</span>}
-                {m.content && busy !== "chat" && canInsert && <button className="btn mt-1" onClick={() => onInsert(stripThink(m.content).split("\n").map((l) => "> " + l).join("\n"))}>Insert into note</button>}
+                {m.content && busy !== "chat" && canInsert && <button className="btn mt-1" onClick={() => onInsert(linkify(stripThink(m.content), notes, note?.id).split("\n").map((l) => "> " + l).join("\n"))}>Insert into note</button>}
               </div>))}
             <div ref={endRef} />
           </div>
