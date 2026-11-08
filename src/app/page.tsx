@@ -8,13 +8,14 @@ import { TEMPLATES } from "@/lib/templates";
 import { useBackup } from "@/lib/backup";
 import { AIPanel } from "@/components/AIPanel";
 import { AISettings, defaultAI, normalizeAI } from "@/lib/ai";
+import { Icon } from "@/components/Icon";
 
 type View = { kind: "all" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
 const FONTS = {
-  sans: "ui-sans-serif, system-ui, sans-serif",
-  serif: "ui-serif, Georgia, serif",
-  mono: "ui-monospace, SFMono-Regular, monospace",
+  sans: "\"Hanken Grotesk\", ui-sans-serif, system-ui, sans-serif",
+  serif: "Newsreader, ui-serif, Georgia, serif",
+  mono: "\"JetBrains Mono\", ui-monospace, SFMono-Regular, monospace",
 };
 
 export default function Home() {
@@ -81,10 +82,10 @@ export default function Home() {
 
   const current = notes.find((n) => n.id === selected) ?? null;
   const isView = (v: View) => JSON.stringify(v) === JSON.stringify(view);
-  const navItem = (v: View, label: string, count?: number) => (
-    <button key={label} onClick={() => { setView(v); setSelected(null); }}
-      className={`hover-row flex w-full items-center justify-between rounded px-2 py-1 text-left text-sm ${isView(v) ? "active-row" : ""}`}>
-      <span className="truncate">{label}</span>{count !== undefined && <span className="muted text-xs">{count}</span>}
+  const navItem = (v: View, label: string, icon: string, count?: number) => (
+    <button key={label} onClick={() => { setView(v); setSelected(null); }} aria-current={isView(v) ? "page" : undefined}
+      className={`nav-item ${isView(v) ? "on" : ""}`}>
+      <Icon name={icon} /><span className="flex-1 truncate">{label}</span>{count !== undefined && count > 0 && <span className="count">{count}</span>}
     </button>
   );
 
@@ -96,56 +97,81 @@ export default function Home() {
     setSelected(id);
   };
 
+  const viewTitle = view.kind === "all" ? "All notes" : view.kind === "archive" ? "Archive" : view.kind === "trash" ? "Trash" : view.kind === "folder" ? view.name : "#" + view.name;
+  const ago = (t: number) => { const d = (Date.now() - t) / 60000; return d < 1 ? "just now" : d < 60 ? `${Math.floor(d)} min ago` : d < 1440 ? `${Math.floor(d / 60)} h ago` : new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
+  const toggles = <span className="hidden gap-1 md:flex">
+    <button className="btn icon-btn ghost" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={() => setHideSide((v) => !v)}><Icon name="sidebar" /></button>
+    <button className="btn icon-btn ghost" title="Toggle note list (⌘\\ hides both)" aria-label="Toggle note list" onClick={() => setHideList((v) => !v)}><Icon name="list" /></button>
+  </span>;
+
   if (!ready) return null;
 
   return (
-    <div className="flex h-screen">
-      <aside className={`bg-panel bd hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r p-3 ${hideSide ? "" : "md:flex"}`}>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="accent-text text-lg font-bold">WebNotes</span>
-          <button className="btn" onClick={() => setShowSettings(true)}>⚙</button>
+    <div className="app flex h-[100dvh]">
+      <aside className={`sidebar hidden w-60 shrink-0 flex-col ${hideSide ? "" : "md:flex"}`}>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true"><Icon name="pen" /></span>
+          <span className="brand-name">WebNotes</span>
+          <button className="btn icon-btn ghost ml-auto" aria-label="Settings" title="Settings" onClick={() => setShowSettings(true)}><Icon name="settings" /></button>
         </div>
-        {navItem({ kind: "all" }, "All notes", live.filter((n) => !n.archived).length)}
-        {navItem({ kind: "archive" }, "Archive", live.filter((n) => n.archived).length)}
-        {navItem({ kind: "trash" }, "🗑 Trash", notes.length - live.length)}
-        {folders.length > 0 && <div className="muted mt-3 text-xs uppercase">Folders</div>}
-        {folders.map((f) => navItem({ kind: "folder", name: f }, "📁 " + f, live.filter((n) => !n.archived && n.folder === f).length))}
-        {tags.length > 0 && <div className="muted mt-3 text-xs uppercase">Tags</div>}
-        {tags.map((t) => navItem({ kind: "tag", name: t }, "# " + t, live.filter((n) => !n.archived && n.tags.includes(t)).length))}
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+          {navItem({ kind: "all" }, "All notes", "notes", live.filter((n) => !n.archived).length)}
+          {navItem({ kind: "archive" }, "Archive", "archive", live.filter((n) => n.archived).length)}
+          {navItem({ kind: "trash" }, "Trash", "trash", notes.length - live.length)}
+          {folders.length > 0 && <div className="nav-group">Folders</div>}
+          {folders.map((f) => navItem({ kind: "folder", name: f }, f, "folder", live.filter((n) => !n.archived && n.folder === f).length))}
+          {tags.length > 0 && <div className="nav-group">Tags</div>}
+          {tags.map((t) => navItem({ kind: "tag", name: t }, t, "tag", live.filter((n) => !n.archived && n.tags.includes(t)).length))}
+        </nav>
       </aside>
 
-      <section className={`bd w-full shrink-0 flex-col border-r md:w-72 ${current ? "hidden" : "flex"} ${hideList ? "" : "md:flex"} ${hideList && current ? "" : ""}`}>
-        <div className="bd flex gap-2 border-b p-3">
-          <button className="btn hidden md:block" title="Toggle sidebar" onClick={() => setHideSide((v) => !v)}>{hideSide ? "☰" : "⇤"}</button>
-          <input className="bd min-w-0 flex-1 rounded border px-2 py-1 text-sm" placeholder="Search…" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div className="relative">
-            <button className="btn accent-bg" onClick={() => setShowNew((v) => !v)}>+ New</button>
-            {showNew && (
-              <div className="bg-panel bd absolute left-0 top-full z-40 mt-1 w-52 rounded-lg border p-1 text-sm shadow-lg">
-                <button className="hover-row block w-full rounded px-2 py-1.5 text-left" onClick={() => newNote()}>📝 Markdown note</button>
-                <button className="hover-row block w-full rounded px-2 py-1.5 text-left" onClick={() => newNote({ kind: "canvas", drawing: [] })}>🎨 Canvas / sketch</button>
-                <div className="muted px-2 pt-2 text-xs uppercase">Templates</div>
-                {Object.entries(TEMPLATES).map(([k, t]) => (
-                  <button key={k} className="hover-row block w-full rounded px-2 py-1.5 text-left" onClick={() => newNote({ title: t.title, body: t.body })}>{k}</button>
-                ))}
-              </div>
-            )}
+      <section className={`list-pane w-full shrink-0 flex-col md:w-80 ${current ? "hidden" : "flex"} ${hideList ? "" : "md:flex"}`}>
+        <div className="list-head">
+          <div className="flex items-center gap-2">
+            {hideSide && <button className="btn icon-btn ghost hidden md:inline-flex" title="Show sidebar" aria-label="Show sidebar" onClick={() => setHideSide(false)}><Icon name="sidebar" /></button>}
+            <h1 className="list-title flex-1 truncate">{viewTitle}</h1>
+            <button className="btn icon-btn ghost md:hidden" aria-label="Settings" onClick={() => setShowSettings(true)}><Icon name="settings" /></button>
+            <div className="relative">
+              <button className="btn btn-primary" aria-expanded={showNew} onClick={() => setShowNew((v) => !v)}><Icon name="plus" /> New</button>
+              {showNew && (<>
+                <div className="fixed inset-0 z-30" onClick={() => setShowNew(false)} />
+                <div className="menu right-0 w-60">
+                  <button className="menu-item" onClick={() => newNote()}><Icon name="notes" /><span><b>Markdown note</b><small>Text, maths, code, diagrams</small></span></button>
+                  <button className="menu-item" onClick={() => newNote({ kind: "canvas", drawing: [] })}><Icon name="pen" /><span><b>Canvas</b><small>Freehand sketch and shapes</small></span></button>
+                  <div className="nav-group">Templates</div>
+                  {Object.entries(TEMPLATES).map(([k, t]) => (
+                    <button key={k} className="menu-item compact" onClick={() => newNote({ title: t.title, body: t.body })}>{k}</button>
+                  ))}
+                </div>
+              </>)}
+            </div>
           </div>
-          <button className="btn md:hidden" onClick={() => setShowSettings(true)}>⚙</button>
+          <label className="search">
+            <Icon name="search" />
+            <input placeholder="Search notes" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search notes" />
+            {query && <button aria-label="Clear search" onClick={() => setQuery("")}><Icon name="close" /></button>}
+          </label>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-2 pb-3">
           {view.kind === "trash" && (
-            <div className="bd muted flex items-center gap-2 border-b p-2 text-xs">
+            <div className="notice my-2 rounded-lg text-xs">
               <span className="flex-1">Deleted notes are kept {TRASH_DAYS} days.</span>
               {visible.length > 0 && <button className="btn" onClick={() => confirm(`Permanently delete ${visible.length} note(s)?`) && (emptyTrash(), setSelected(null))}>Empty trash</button>}
             </div>)}
-          {visible.length === 0 && <p className="muted p-4 text-sm">{view.kind === "trash" ? "Trash is empty." : "No notes here yet."}</p>}
+          {visible.length === 0 && <div className="empty-list">{query ? `No notes match “${query}”.` : view.kind === "trash" ? "Trash is empty." : view.kind === "archive" ? "Archived notes appear here." : "No notes yet. Press New to write one."}</div>}
           {visible.map((n) => (
-            <button key={n.id} onClick={() => setSelected(n.id)}
-              className={`hover-row bd block w-full border-b px-3 py-2 text-left ${n.id === selected ? "active-row" : ""}`}>
-              <div className="truncate font-medium">{n.pinned && "📌 "}{n.kind === "canvas" && "🎨 "}{n.title || "Untitled"}</div>
-              <div className="muted truncate text-xs">{n.kind === "canvas" ? `Canvas · ${n.drawing?.length ?? 0} objects` : n.body.replace(/[#*`>\-\[\]$]/g, "").slice(0, 80) || "Empty note"}</div>
-              <div className="muted mt-0.5 text-[11px]">{n.deletedAt ? `deleted ${new Date(n.deletedAt).toLocaleDateString()}` : new Date(n.updatedAt).toLocaleDateString()}{n.folder && ` · ${n.folder}`}{n.tags.map((t) => ` #${t}`)}</div>
+            <button key={n.id} onClick={() => setSelected(n.id)} className={`note-card ${n.id === selected ? "on" : ""}`}>
+              <div className="flex items-center gap-1.5">
+                {n.kind === "canvas" && <Icon name="pen" className="muted" />}
+                <span className="note-card-title flex-1 truncate">{n.title || "Untitled"}</span>
+                {n.pinned && <Icon name="pin" className="accent-text" />}
+              </div>
+              <div className="note-card-body">{n.kind === "canvas" ? `Canvas with ${n.drawing?.length ?? 0} objects` : n.body.replace(/[#*`>\-\[\]$]/g, "").slice(0, 120) || "Empty note"}</div>
+              <div className="note-card-meta">
+                <span>{n.deletedAt ? `Deleted ${ago(n.deletedAt)}` : ago(n.updatedAt)}</span>
+                {n.folder && <span className="pill"><Icon name="folder" />{n.folder}</span>}
+                {n.tags.slice(0, 3).map((t) => <span key={t} className="pill">#{t}</span>)}
+              </div>
             </button>
           ))}
         </div>
@@ -154,23 +180,35 @@ export default function Home() {
       <main className={`min-w-0 flex-1 ${current ? "block" : "hidden md:block"}`}>
         {current ? (
           <div className="flex h-full flex-col">
-            <button className="btn m-2 self-start md:hidden" onClick={() => setSelected(null)}>← Back</button>
             <div className="min-h-0 flex-1">
               <Editor key={current.id} note={current} folders={folders} notes={live}
-                extra={<button className={`btn ${showAI ? "accent-bg" : ""}`} title="AI assistant (⌘J)" onClick={() => setShowAI((v) => !v)}>✨ AI</button>}
+                extra={<button className={`btn ${showAI ? "btn-primary" : ""}`} title="AI assistant (⌘J)" onClick={() => setShowAI((v) => !v)}><Icon name="sparkle" /> AI</button>}
                 onOpenNote={(id) => { setBack(current.id); setSelected(id); }} onNewSketch={() => { const id = create({ kind: "canvas", drawing: [], title: "Sketch" }); return id; }}
-                leading={<span className="hidden gap-1 md:flex">
-                  <button className="btn" title="Toggle sidebar" onClick={() => setHideSide((v) => !v)}>{hideSide ? "☰" : "⇤"}</button>
-                  <button className="btn" title="Toggle note list (⌘\\ hides both)" onClick={() => setHideList((v) => !v)}>{hideList ? "▤" : "⇤"}</button>
-                  {back && notes.some((n) => n.id === back) && <button className="btn" onClick={() => { setSelected(back); setBack(null); }}>← back</button>}
-                </span>}
+                leading={<>
+                  <button className="btn icon-btn ghost md:hidden" aria-label="Back to list" onClick={() => setSelected(null)}><Icon name="back" /></button>
+                  {toggles}
+                  {back && notes.some((n) => n.id === back) && <button className="btn ghost" onClick={() => { setSelected(back); setBack(null); }}><Icon name="back" /> Back</button>}
+                </>}
                 onChange={(p) => update(current.id, p)} onDelete={() => { remove(current.id); setSelected(null); }}
                 onRestore={() => { restore(current.id); setView({ kind: "all" }); }} onPurge={() => { purge(current.id); setSelected(null); }}
                 onWikiLink={(title) => { const hit = live.find((n) => n.title.trim().toLowerCase() === title.trim().toLowerCase()); if (hit) { setBack(current.id); setSelected(hit.id); } else if (confirm(`Create a new note called "${title}"?`)) { const id = create({ title }); setBack(current.id); setSelected(id); } }} />
             </div>
           </div>
         ) : (
-          <div className="muted flex h-full items-center justify-center">Select a note or create a new one</div>
+          <div className="empty-main">
+            <div className="empty-sheet">
+              <p className="empty-title">Pick a note, or start a new page.</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button className="btn btn-primary" onClick={() => newNote()}><Icon name="notes" /> New note</button>
+                <button className="btn" onClick={() => newNote({ kind: "canvas", drawing: [] })}><Icon name="pen" /> New canvas</button>
+              </div>
+              <dl className="shortcuts">
+                <div><dt><kbd>⌘</kbd><kbd>J</kbd></dt><dd>AI assistant</dd></div>
+                <div><dt><kbd>⌘</kbd><kbd>\</kbd></dt><dd>Focus mode</dd></div>
+                <div><dt><kbd>[[</kbd></dt><dd>Link a note</dd></div>
+              </dl>
+            </div>
+          </div>
         )}
       </main>
 
@@ -180,7 +218,7 @@ export default function Home() {
             onInsert={(text) => current && update(current.id, { body: (() => { const b = current.body.replace(/\s*$/, ""); const task = /^- \[[ x]\] /.test(text) && /(^|\n)- \[[ x]\] [^\n]*$/.test(b); return b + (task ? "\n" : "\n\n") + text + "\n"; })() })} />
         </aside>
       )}
-      {!showAI && !current && <button className="btn fixed bottom-4 right-4 z-30 shadow" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}>✨ AI</button>}
+      {!showAI && !current && <button className="btn fab" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}><Icon name="sparkle" /> AI</button>}
 
       {showSettings && <SettingsPanel settings={settings} onChange={setSettings} notes={notes} onImport={importNotes} backup={backup} onClose={() => setShowSettings(false)} />}
     </div>

@@ -38,4 +38,4 @@ export type Settings = {
   fontSize: number;
 };
 
-export const defaultSettings: Settings = { theme: "system", accent: "#6366f1", font: "sans", fontSize: 16 };
+export const defaultSettings: Settings = { theme: "system", accent: "#2b59c3", font: "sans", fontSize: 16 };
