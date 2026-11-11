@@ -16,9 +16,15 @@ export type El = {
   head?: boolean;                                  // pen: draw an arrowhead at the end (curved arrow)
   g?: string;                                      // group id: templates move/delete as one
   fill?: string;                                   // rect/ellipse/diamond fill ("accent" = tinted accent)
+  sk?: number;                                     // hand-drawn roughness (0/undefined = clean lines)
+  font?: "hand" | "script" | "mono";               // text: handwriting, script headings, code
+  bold?: boolean;                                  // text
+  dash?: boolean;                                  // dashed outline
+  rot?: number; rc?: Pt;                           // rotation in degrees around rc (sticky notes)
+  shadow?: boolean;                                // soft drop shadow (sticky notes)
 };
 
-export type Paper = "blank" | "dots" | "grid" | "graph" | "ruled-narrow" | "ruled" | "ruled-wide" | "handwriting" | "cornell" | "isometric" | "music";
+export type Paper = "blank" | "dots" | "grid" | "graph" | "ruled-narrow" | "ruled" | "ruled-wide" | "handwriting" | "cornell" | "isometric" | "music" | "sheet";
 
 export type Note = {
   id: string;
@@ -40,7 +46,7 @@ export type Note = {
 export type Settings = {
   theme: "light" | "dark" | "system";
   accent: string;
-  font: "sans" | "serif" | "mono";
+  font: "sans" | "serif" | "mono" | "hand";
   fontSize: number;
 };
 

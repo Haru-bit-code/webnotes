@@ -1,4 +1,8 @@
 import "./globals.css";
+import "@fontsource/kalam/latin-400.css";
+import "@fontsource/kalam/latin-700.css";
+import "@fontsource/caveat/latin-500.css";
+import "@fontsource/caveat/latin-700.css";
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/atom-one-dark.css";
 import type { Metadata, Viewport } from "next";

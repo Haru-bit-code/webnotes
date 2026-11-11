@@ -50,7 +50,7 @@ export function SettingsPanel({ settings, onChange, notes, onImport, backup, onC
                 <label className="swatch swatch-custom" title="Custom colour"><input type="color" value={settings.accent} onChange={(e) => onChange({ ...settings, accent: e.target.value })} /></label>
               </div>
             </Row>
-            <Row label="Note font"><Seg value={settings.font} options={[["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"]]} onChange={(v) => onChange({ ...settings, font: v as Settings["font"] })} /></Row>
+            <Row label="Note font"><Seg value={settings.font} options={[["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"], ["hand", "Hand"]]} onChange={(v) => onChange({ ...settings, font: v as Settings["font"] })} /></Row>
             <Row label={`Text size · ${settings.fontSize}px`}>
               <input type="range" className="range" min={13} max={22} value={settings.fontSize} onChange={(e) => onChange({ ...settings, fontSize: +e.target.value })} />
             </Row>

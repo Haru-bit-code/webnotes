@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
+    "@fontsource/caveat": "^5.2.6",
+    "@fontsource/kalam": "^5.2.5",
     "dompurify": "^3.4.16",
     "highlight.js": "^11.12.0",
     "katex": "^0.18.10",
@@ -17,7 +19,8 @@
     "mermaid": "^12.1.0",
     "next": "^15",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "roughjs": "^4.6.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

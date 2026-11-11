@@ -16,6 +16,7 @@ export const PAPERS: { id: Paper; name: string; hint: string }[] = [
   { id: "cornell", name: "Cornell", hint: "Cue column + notes" },
   { id: "isometric", name: "Isometric", hint: "3D drawing dots" },
   { id: "music", name: "Music staff", hint: "Five-line staves" },
+  { id: "sheet", name: "Study sheet", hint: "Cream graph paper with margin" },
 ];
 
 type View = { x: number; y: number; k: number };
@@ -42,6 +43,7 @@ function pattern(paper: Paper): { w: number; h: number; body: React.ReactNode } 
     case "isometric": return { w: ISO_W, h: 24, body: <>
       {[[0, 0], [ISO_W, 0], [0, 24], [ISO_W, 24], [ISO_W / 2, 12]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r={1.1} fill="currentColor" opacity={0.32} />)}
     </> };
+    case "sheet": return { w: 24, h: 24, body: <path d="M24 0H0V24" fill="none" stroke={LINE} opacity={0.2} strokeWidth={0.8} /> };
     case "music": return { w: 16, h: 120, body: <path d={[30, 39, 48, 57, 66].map((y) => `M0 ${y}H16`).join("")} stroke="currentColor" opacity={0.32} /> };
     default: return null;
   }
@@ -50,7 +52,7 @@ function pattern(paper: Paper): { w: number; h: number; body: React.ReactNode } 
 // Lines that are fixed in world space (margins, Cornell cue column)
 function decorations(paper: Paper) {
   const big = 1e5;
-  if (paper === "ruled" || paper === "ruled-narrow" || paper === "ruled-wide")
+  if (paper === "ruled" || paper === "ruled-narrow" || paper === "ruled-wide" || paper === "sheet")
     return <path d={`M72 ${-big}V${big}`} stroke={MARGIN} opacity={0.55} vectorEffect="non-scaling-stroke" />;
   if (paper === "cornell")
     return <path d={`M${-big} 90H${big}M220 90V${big}`} stroke={MARGIN} opacity={0.55} vectorEffect="non-scaling-stroke" />;
@@ -63,6 +65,7 @@ export function PaperLayer({ paper, view }: { paper: Paper; view: View }) {
   const t = `translate(${view.x} ${view.y}) scale(${view.k})`;
   return (
     <g pointerEvents="none">
+      {paper === "sheet" && <rect width="100%" height="100%" fill="var(--sheet-bg)" />}
       {p && <>
         <defs><pattern id={id} width={p.w} height={p.h} patternUnits="userSpaceOnUse" patternTransform={t}>{p.body}</pattern></defs>
         <rect width="100%" height="100%" fill={`url(#${id})`} />

@@ -2,10 +2,11 @@
 // Each one is built from ordinary canvas shapes that share a group id, so it moves as a unit
 // and every line or label stays editable.
 import { El, ElType, Pt } from "./types";
+import { COL, sketch } from "./sketchKit";
 
 export type Stamp = { name: string; cat: Category; build: () => El[] };
-export type Category = "Tables" | "Charts" | "Lines & lists" | "Diagrams" | "Planning" | "Study" | "Maths & science";
-export const CATEGORIES: Category[] = ["Tables", "Charts", "Lines & lists", "Diagrams", "Planning", "Study", "Maths & science"];
+export type Category = "Sketch" | "Tables" | "Charts" | "Lines & lists" | "Diagrams" | "Planning" | "Study" | "Maths & science";
+export const CATEGORIES: Category[] = ["Sketch", "Tables", "Charts", "Lines & lists", "Diagrams", "Planning", "Study", "Maths & science"];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DIM = 0.45; // stroke width for guide lines
@@ -68,7 +69,59 @@ function chartFrame(k: ReturnType<typeof kit>, w: number, h: number, gridlines =
   for (let i = 1; i <= gridlines; i++) { const y = h - 24 - (i * (h - 40)) / gridlines; k.line(26, y, w - 10, y, { w: DIM, c: "#94a3b8" }); }
 }
 
+const SK = (name: string, f: (k: ReturnType<typeof sketch>) => void): Stamp => ({ name, cat: "Sketch", build: () => { const k = sketch(); f(k); return k.done(); } });
+
 export const STAMPS: Stamp[] = [
+  // ---- Sketch: hand-drawn study-sheet blocks
+  SK("Page title", (k) => { k.title(0, 50, "Page title"); k.wavy(0, 74, 420); k.text(0, 104, "study notes · date", { fs: 16, c: COL.grey }); }),
+  SK("Section box", (k) => { k.section(0, 0, 420, 220, "About"); k.text(20, 86, "Write the main idea here.", { fs: 16 }); k.text(20, 114, "Add a second line.", { fs: 16 }); }),
+  SK("Sticky · yellow", (k) => k.sticky(0, 0, 330, 170, COL.yellow, "Who uses it?", ["👀 Reader – anyone", "✍️ User – signs in", "🛡️ Moderator – checks"])),
+  SK("Sticky · green", (k) => k.sticky(0, 0, 330, 170, COL.mint, "Added this round", ["★ First change", "★ Second change", "★ Third change"], 1)),
+  SK("Sticky · pink", (k) => k.sticky(0, 0, 420, 90, COL.pink, "", ["Pattern: what keeps going wrong –", "and why."], 0.6)),
+  SK("Sticky · blue", (k) => k.sticky(0, 0, 420, 90, COL.sky, "", ["Rule of thumb: the one thing", "to remember."], -0.6)),
+  SK("Numbered list", (k) => k.numbered(0, 0, 520, ["First item", "Second item", "Third item", "Fourth item", "Fifth item"])),
+  SK("Problem → fix", (k) => {
+    k.matrix(0, 0, ["#", "Problem  →  what we did"], [62, 540], []);
+    ["Problem one", "Problem two", "Problem three"].forEach((p, i) => {
+      const y = 34 + i * 58; k.line(0, y + 58, 602, y + 58, { w: 1.6, sk: 0.4 }); k.ellipse(18, y + 16, 26, 26); k.text(26, y + 35, String(i + 1), { fs: 15 });
+      k.text(74, y + 22, p, { fs: 14, c: COL.red }); k.text(74, y + 44, "→ what we changed", { fs: 15 });
+    });
+    k.line(62, 34, 62, 34 + 3 * 58, { w: 1.4, sk: 0.4 }); k.box(0, 0, 602, 34 + 3 * 58, { w: 2.2, sk: 0.4 });
+  }),
+  SK("Who can do what", (k) => k.matrix(0, 0, ["Ability", "Reader", "User", "Admin"], [240, 80, 80, 80], [["Browse", true, true, true], ["Write", false, true, true], ["Moderate", false, false, true], ["Delete", false, false, true]])),
+  SK("Roles flow", (k) => {
+    const xs = [30, 230, 430, 630], names: [string, string][] = [["Reader", COL.grey], ["User", COL.blue], ["Moderator", COL.green], ["Admin", COL.red]];
+    xs.forEach((x, i) => { k.stickman(x, 14, names[i][0], names[i][1]); if (i < 3) { k.arrow(x + 50, 60, x + 160, 60, { w: 2 }); k.text(x + 72, 46, ["sign in", "+ trust", "+ power"][i], { fs: 14 }); } });
+  }),
+  SK("Swimlanes", (k) => {
+    [["Reader", "auto"], ["User", COL.blue], ["Moderator", COL.green]].forEach(([l, c], i) => k.lane(0, i * 120, 720, 108, l, c));
+    k.card(150, 40, 130, 40, COL.yellow, "Search"); k.card(330, 40, 130, 40, COL.yellow, "Open page"); k.arrow(282, 60, 326, 60);
+    k.card(150, 160, 150, 40, COL.sky, "Write story"); k.card(360, 160, 130, 40, COL.peach, "Pending", { bold: true }); k.arrow(302, 180, 356, 180);
+    k.card(360, 280, 140, 40, COL.pink, "Reject"); k.card(550, 280, 140, 40, COL.mint, "Approve"); k.arrow(425, 202, 425, 276, { c: COL.red }); k.arrow(492, 196, 600, 276, { c: COL.green });
+  }),
+  SK("State flow", (k) => {
+    k.card(0, 0, 150, 48, COL.peach, "PENDING", { fs: 18 }); k.card(260, 0, 170, 48, COL.mint, "PUBLISHED", { fs: 18 }); k.card(540, 0, 150, 48, COL.pink, "HIDDEN", { fs: 18 });
+    k.card(0, 130, 170, 48, COL.sky, "CHANGES_REQ", { fs: 18 }); k.card(260, 130, 150, 48, COL.stone, "REJECTED", { fs: 18 });
+    k.arrow(152, 24, 256, 24, { c: COL.green }); k.text(176, 14, "Approve", { fs: 13, c: COL.green });
+    k.arrow(432, 18, 536, 18, { c: COL.red }); k.text(468, 10, "Hide", { fs: 13, c: COL.red });
+    k.arrow(536, 34, 432, 34, { c: COL.green });
+    k.arrow(40, 50, 40, 126, { c: COL.blue }); k.arrow(120, 50, 300, 126, { c: COL.red });
+  }),
+  SK("Pipeline", (k) => {
+    ["Browser", "Guard", "Validate", "Use case", "Database"].forEach((s, i) => {
+      const x = i * 160; k.box(x, 0, 130, 70); k.text(x + 14, 32, `${i + 1} ${s}`, { fs: 22, bold: true, font: "script" }); k.text(x + 14, 56, "what it does", { fs: 12, c: COL.grey });
+      if (i < 4) k.arrow(x + 132, 35, x + 158, 35);
+    });
+  }),
+  SK("Code card", (k) => k.code(0, 0, 440, "Routes", ["GET  /items", "GET  /items/:id", "POST /items        (signed in)", "PATCH /items/:id   (owner)"])),
+  SK("Starred list", (k) => { k.bullets(0, 0, ["First point", "Second point", "Third point", "Fourth point"]); }),
+  SK("Two-column boxes", (k) => {
+    k.section(0, 0, 330, 260, "Round 1", COL.red); k.section(360, 0, 330, 260, "Round 2", COL.blue);
+    k.bullets(22, 90, ["Point", "Point", "Point"], 30, "•", "auto"); k.bullets(382, 90, ["Point", "Point", "Point"], 30, "•", "auto");
+  }),
+  SK("Wavy underline", (k) => { k.wavy(0, 10, 360); }),
+  SK("Marker highlight", (k) => { k.pen([[0, 12], [300, 12]], { t: "hl", c: "#facc15", w: 18 }); k.text(6, 18, "highlighted words", { fs: 18 }); }),
+
   // ---- Tables
   { name: "Table 2 × 3", cat: "Tables", build: () => table(2, 3) },
   { name: "Table 3 × 4", cat: "Tables", build: () => table(3, 4, { head: ["Header", "Header", "Header"] }) },

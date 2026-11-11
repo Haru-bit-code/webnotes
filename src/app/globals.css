@@ -22,14 +22,14 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-body: var(--font-ui); --font-size: 16px;
   --r-sm: 6px; --r: 9px; --r-lg: 14px;
-  --paper-line: #4f7fd0; --paper-margin: #e06666;
+  --paper-line: #4f7fd0; --paper-margin: #e06666; --sheet-bg: #fdfcf6;
 }
 :root.dark {
   --bg: #12161d; --panel: #171c25; --raised: #1d2330; --chip: #242b39; --border: #2a3242;
   --grid: rgba(140, 170, 255, .05);
   --text: #e4e8ef; --muted: #8c96a8; --danger: #f07167;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -10px rgba(0,0,0,.6);
-  --paper-line: #7c9fe0; --paper-margin: #f08080;
+  --paper-line: #7c9fe0; --paper-margin: #f08080; --sheet-bg: #191d24;
 }
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 15px; -webkit-font-smoothing: antialiased; }
@@ -238,8 +238,24 @@ kbd { font-family: var(--font-mono); font-size: 11px; padding: 2px 6px; min-widt
 .stamp svg { width: 100%; height: 78px; color: var(--text); }
 .stamp-hint { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.45; }
 
-/* new scribble page dialog */
-.new-paper .modal { max-width: 560px; }
+/* new scribble page dialog, custom templates */
+.modal.new-page { max-width: 860px; }
+.layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.layout-opt { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 6px 6px 10px; border-radius: var(--r); border: 1px solid var(--border); text-align: left; font-size: 13.5px; transition: border-color .12s; }
+.layout-opt:hover { border-color: var(--accent); }
+.layout-opt small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.layout-thumb { aspect-ratio: 4 / 3; border-radius: 6px; overflow: hidden; background: var(--sheet-bg); border: 1px solid var(--border); margin-bottom: 4px; padding: 4px; }
+.layout-thumb svg { width: 100%; height: 100%; color: var(--text); }
+.stamp-wrap { position: relative; }
+.stamp-wrap .stamp { width: 100%; height: 100%; }
+.stamp-del { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 99px; background: var(--raised); border: 1px solid var(--border); color: var(--muted); opacity: 0; transition: opacity .12s; }
+.stamp-del .ico { width: 12px; height: 12px; }
+.stamp-wrap:hover .stamp-del, .stamp-del:focus-visible { opacity: 1; }
+@media (pointer: coarse) { .stamp-del { opacity: 1; } }
+.stamp-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.chip-btn.mine { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.save-pop { right: 12px; top: 64px; width: min(360px, calc(100% - 24px)); }
+.sketch-label { font-family: Caveat, cursive; font-size: 17px !important; font-weight: 700 !important; }
 
 @media (max-width: 767px) {
   .stamp-panel { left: 8px; right: 8px; width: auto; top: auto; bottom: 8px; height: 62%; }

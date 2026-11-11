@@ -2,9 +2,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { El, ElType, Paper, Pt } from "@/lib/types";
 import { parsePlotShort, plotInner } from "@/lib/charts";
-import { CATEGORIES, Category, STAMPS, placeStamp } from "@/lib/stamps";
+import { CATEGORIES, STAMPS, placeStamp } from "@/lib/stamps";
+import { useCustomTemplates } from "@/lib/customTemplates";
 import { PaperLayer, PaperPicker } from "./Paper";
 import { Icon } from "./Icon";
+import rough from "roughjs";
 
 type Tool = "select" | "hand" | "pen" | "hl" | "eraser" | "line" | "arrow" | "rect" | "ellipse" | "diamond" | "triangle" | "cube" | "text" | "axes" | "plot";
 const TOOLS: [Tool, string, string][] = [
@@ -47,14 +49,63 @@ export function bbox(e: El) {
 }
 
 function moveEl(e: El, dx: number, dy: number): El {
-  return { ...e, x: e.x + dx, y: e.y + dy, ...(e.x2 !== undefined && { x2: e.x2 + dx, y2: e.y2! + dy }),
+  return { ...e, x: e.x + dx, y: e.y + dy, ...(e.x2 !== undefined && { x2: e.x2 + dx, y2: e.y2! + dy }), ...(e.rc && { rc: [e.rc[0] + dx, e.rc[1] + dy] as Pt }),
     ...(e.pts && { pts: e.pts.map(([x, y]) => [x + dx, y + dy] as Pt) }) };
 }
 
+// ---- hand-drawn ("sketch") rendering via rough.js, deterministic per element id ----
+const gen = rough.generator();
+const roughCache = new Map<string, { d: string; fill: boolean }[]>();
+const seedOf = (id: string) => { let h = 7; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; return (h % 2 ** 31) || 1; };
+function roughPaths(e: El, b: { x: number; y: number; w: number; h: number }) {
+  const key = JSON.stringify([e.id, e.t, e.x, e.y, e.x2, e.y2, e.pts, e.w, e.sk, !!e.fill]);
+  const hit = roughCache.get(key); if (hit) return hit;
+  const o = { seed: seedOf(e.id), roughness: e.sk, bowing: 0.9, strokeWidth: e.w, stroke: "S", fill: e.fill ? "F" : undefined, fillStyle: "solid", disableMultiStroke: true, preserveVertices: false };
+  let dr;
+  switch (e.t) {
+    case "rect": dr = gen.rectangle(b.x, b.y, b.w, b.h, o); break;
+    case "ellipse": dr = gen.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, o); break;
+    case "diamond": dr = gen.polygon([[b.x + b.w / 2, b.y], [b.x + b.w, b.y + b.h / 2], [b.x + b.w / 2, b.y + b.h], [b.x, b.y + b.h / 2]], o); break;
+    case "triangle": dr = gen.polygon([[b.x + b.w / 2, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]], o); break;
+    case "poly": dr = gen.polygon(e.pts as [number, number][], o); break;
+    default: dr = gen.line(e.x, e.y, e.x2!, e.y2!, o);
+  }
+  const out = gen.toPaths(dr).map((p) => ({ d: p.d, fill: !!p.fill && p.fill !== "none" }));
+  if (roughCache.size > 3000) roughCache.clear();
+  roughCache.set(key, out);
+  return out;
+}
+const FONTS: Record<string, string> = {
+  hand: "Kalam,'Comic Sans MS',cursive", script: "Caveat,'Comic Sans MS',cursive", mono: "'JetBrains Mono',ui-monospace,monospace",
+};
+
 export function Shape({ e }: { e: El }) {
+  const body = <ShapeBody e={e} />;
+  const b = e.shadow ? bbox(e) : null;
+  const shadow = b && <rect x={b.x + 3} y={b.y + 5} width={b.w} height={b.h} rx={3} fill="#0f172a" opacity={0.13} />;
+  if (!e.rot) return shadow ? <>{shadow}{body}</> : body;
+  const c = e.rc ?? (() => { const q = bbox(e); return [q.x + q.w / 2, q.y + q.h / 2]; })();
+  return <g transform={`rotate(${e.rot} ${c[0]} ${c[1]})`}>{shadow}{body}</g>;
+}
+
+function ShapeBody({ e }: { e: El }) {
   const s = stroke(e);
   const b = bbox(e);
-  const common = { stroke: s, strokeWidth: e.w, fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  const common = { stroke: s, strokeWidth: e.w, fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const, strokeDasharray: e.dash ? "7 6" : undefined };
+  if (e.sk && ["rect", "ellipse", "diamond", "triangle", "poly", "line", "arrow"].includes(e.t)) {
+    const paths = roughPaths(e, b);
+    let head: React.ReactNode = null;
+    if (e.t === "arrow") {
+      const ang = Math.atan2(e.y2! - e.y, e.x2! - e.x), hl = 9 + e.w * 2;
+      head = <path d={`M${e.x2! - hl * Math.cos(ang - 0.42)} ${e.y2! - hl * Math.sin(ang - 0.42)}Q${e.x2! - hl * 0.3 * Math.cos(ang)} ${e.y2! - hl * 0.3 * Math.sin(ang) + 0.5} ${e.x2} ${e.y2}Q${e.x2! - hl * 0.35 * Math.cos(ang)} ${e.y2! - hl * 0.35 * Math.sin(ang) - 0.5} ${e.x2! - hl * Math.cos(ang + 0.42)} ${e.y2! - hl * Math.sin(ang + 0.42)}`} {...common} strokeDasharray={undefined} />;
+    }
+    const hitArea = e.t === "line" || e.t === "arrow"
+      ? <line x1={e.x} y1={e.y} x2={e.x2} y2={e.y2} stroke="transparent" strokeWidth={14} />
+      : <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent" />;
+    return <g>{hitArea}{paths.map((p, i) => p.fill
+      ? <path key={i} d={p.d} fill={fillOf(e)} fillOpacity={fillOp(e)} stroke="none" />
+      : <path key={i} d={p.d} {...common} />)}{head}</g>;
+  }
   switch (e.t) {
     case "pen": case "hl": {
       let head: React.ReactNode = null;
@@ -95,7 +146,7 @@ export function Shape({ e }: { e: El }) {
     case "diamond": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h / 2}L${b.x + b.w / 2} ${b.y + b.h}L${b.x} ${b.y + b.h / 2}Z`} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
     case "triangle": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h}L${b.x} ${b.y + b.h}Z`} {...common} fill="transparent" />;
     case "text":
-      return <text x={e.x} y={e.y} fontSize={e.fs || 20} fill={s} fontFamily="'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif" style={{ whiteSpace: "pre" }}>
+      return <text x={e.x} y={e.y} fontSize={e.fs || 20} fill={s} fontFamily={FONTS[e.font ?? ""] ?? "'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif"} fontWeight={e.bold ? 700 : undefined} style={{ whiteSpace: "pre" }}>
         {(e.text || "").split("\n").map((l, i) => <tspan key={i} x={e.x} dy={i ? (e.fs || 20) * 1.3 : 0}>{l}</tspan>)}</text>;
     case "axes": {
       const x0 = b.x + 24, y0 = b.y + b.h - 24, ticks: React.ReactNode[] = [];
@@ -235,15 +286,20 @@ function recogniseAll(pts: Pt[], els: El[], base: { id: string; c: string; w: nu
 }
 
 export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { initial: El[]; onChange: (els: El[]) => void; title: string; paper?: Paper; onPaper?: (p: Paper) => void }) {
-  const [panel, setPanel] = useState<null | "templates" | "paper" | "more">(null);
-  const [cat, setCat] = useState<Category>("Tables");
+  const [panel, setPanel] = useState<null | "templates" | "paper" | "more" | "save">(null);
+  const [cat, setCat] = useState<string>("Sketch");
+  const custom = useCustomTemplates();
+  const [sketch, setSketch] = useState(() => { try { return localStorage.getItem("webnotes:sketch") === "1"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("webnotes:sketch", sketch ? "1" : "0"); } catch { /* ignore */ } }, [sketch]);
+  const [marq, setMarq] = useState<null | { x: number; y: number; x2: number; y2: number }>(null);
   const [els, setEls] = useState<El[]>(initial);
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState("auto");
   const [width, setWidth] = useState(3);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [draft, setDraft] = useState<El | null>(null);
-  const [sel, setSel] = useState<string | null>(null);
+  const [selIds, setSelIds] = useState<string[]>([]);
+  const sel = selIds[0] ?? null;
   const [smooth, setSmooth] = useState(5);
   const [snapGrid, setSnapGrid] = useState(false);
   const [penOnly, setPenOnly] = useState(false);
@@ -254,12 +310,12 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [snapPrev, setSnapPrev] = useState<Snap | null>(null);
   const stab = useRef<Pt>([0, 0]);
-  const [textBox, setTextBox] = useState<{ id?: string; x: number; y: number; value: string } | null>(null);
+  const [textBox, setTextBox] = useState<{ id?: string; x: number; y: number; value: string; fs?: number; font?: El["font"] } | null>(null);
   const past = useRef<El[][]>([]);
   const future = useRef<El[][]>([]);
   const elsRef = useRef(els); elsRef.current = els;
   const drawRef = useRef<El | null>(null);
-  const drag = useRef<null | { mode: "draw" | "pan" | "move" | "erase"; sx: number; sy: number; last: Pt; snap?: El[]; moved?: boolean }>(null);
+  const drag = useRef<null | { mode: "draw" | "pan" | "move" | "erase" | "marquee"; sx: number; sy: number; last: Pt; snap?: El[]; moved?: boolean }>(null);
   const widthSnap = useRef<El[] | null>(null);
   const space = useRef(false);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -267,7 +323,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
 
   drawRef.current = draft;
   // a template's shapes share a group id: selecting one selects the whole group
-  const selIds = useMemo(() => { const s0 = els.find((x) => x.id === sel); return !s0 ? [] : s0.g ? els.filter((x) => x.g === s0.g).map((x) => x.id) : [s0.id]; }, [els, sel]);
+  const withGroups = (ids: string[], list = elsRef.current) => { const gs = new Set(list.filter((x) => ids.includes(x.id) && x.g).map((x) => x.g)); return list.filter((x) => ids.includes(x.id) || (x.g && gs.has(x.g))).map((x) => x.id); };
+  const setSel = (id: string | null, add = false) => setSelIds((cur) => { if (!id) return add ? cur : []; const ids = withGroups([id]); if (!add) return ids; return cur.includes(id) ? cur.filter((x) => !ids.includes(x)) : [...cur, ...ids]; });
   const selRef = useRef(selIds); selRef.current = selIds;
   const commit = useCallback((next: El[], prev = elsRef.current) => {
     past.current.push(prev); future.current = [];
@@ -338,8 +395,10 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     if (e.button === 1 || tool === "hand" || space.current || (penOnly && e.pointerType === "touch")) { drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, last: [view.x, view.y] }; return; }
     if (tool === "select") {
       const id = idAt(e.clientX, e.clientY);
-      setSel(id);
-      if (id) drag.current = { mode: "move", sx: 0, sy: 0, last: p, snap: elsRef.current };
+      if (!id) { if (!e.shiftKey) setSel(null); setMarq({ x: p[0], y: p[1], x2: p[0], y2: p[1] }); drag.current = { mode: "marquee", sx: 0, sy: 0, last: p }; return; }
+      if (e.shiftKey) { setSel(id, true); return; }
+      if (!selRef.current.includes(id)) setSel(id);
+      drag.current = { mode: "move", sx: 0, sy: 0, last: p, snap: elsRef.current };
       return;
     }
     if (tool === "eraser") { drag.current = { mode: "erase", sx: 0, sy: 0, last: p, snap: elsRef.current }; erase(e.clientX, e.clientY); return; }
@@ -348,7 +407,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     const isFree = t === "pen" || t === "hl";
     if (!isFree && snapGrid) { p[0] = Math.round(p[0] / 24) * 24; p[1] = Math.round(p[1] / 24) * 24; }
     stab.current = p; lastMove.current = Date.now(); anchor.current = [e.clientX, e.clientY]; setSnapPrev(null);
-    setDraft({ id: uid(), t, x: p[0], y: p[1], x2: p[0], y2: p[1], pts: isFree ? [p] : undefined, c: t === "hl" && color === "auto" ? "#facc15" : color, w: t === "hl" ? width * 5 : width });
+    setDraft({ id: uid(), t, x: p[0], y: p[1], x2: p[0], y2: p[1], pts: isFree ? [p] : undefined, ...(sketch && !isFree && t !== "axes" && t !== "plot" && t !== "cube" ? { sk: 1.1 } : {}), c: t === "hl" && color === "auto" ? "#facc15" : color, w: t === "hl" ? width * 5 : width });
     drag.current = { mode: "draw", sx: 0, sy: 0, last: p };
   };
 
@@ -375,7 +434,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     if (d.mode === "pan") { setView((v) => ({ ...v, x: d.last[0] + e.clientX - d.sx, y: d.last[1] + e.clientY - d.sy })); return; }
     const p = toWorld(e.clientX, e.clientY);
     if (d.mode === "erase") { erase(e.clientX, e.clientY); return; }
-    if (d.mode === "move" && sel) {
+    if (d.mode === "marquee") { setMarq((m) => (m ? { ...m, x2: p[0], y2: p[1] } : m)); return; }
+    if (d.mode === "move" && selRef.current.length) {
       d.moved = true;
       const dx = p[0] - d.last[0], dy = p[1] - d.last[1]; d.last = p;
       const ids = selRef.current;
@@ -417,6 +477,14 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     if (e?.pointerType === "touch") { touches.current.delete(e.pointerId); if (touches.current.size < 2) gesture.current = null; }
     const d = drag.current; drag.current = null;
     if (!d) return;
+    if (d.mode === "marquee") {
+      const m = marq; setMarq(null); if (!m) return;
+      const x0 = Math.min(m.x, m.x2), x1 = Math.max(m.x, m.x2), y0 = Math.min(m.y, m.y2), y1 = Math.max(m.y, m.y2);
+      if (x1 - x0 < 4 && y1 - y0 < 4) return;
+      const inside = elsRef.current.filter((x) => { const q = bbox(x); return q.x >= x0 && q.y >= y0 && q.x + q.w <= x1 && q.y + q.h <= y1; }).map((x) => x.id);
+      setSelIds((cur) => [...new Set([...cur, ...withGroups(inside)])]);
+      return;
+    }
     if (d.mode === "erase" || d.mode === "move") {
       if (d.mode === "erase" ? elsRef.current.length !== d.snap!.length : d.moved) { past.current.push(d.snap!); future.current = []; onChange(elsRef.current); }
       return;
@@ -452,7 +520,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   const onDouble = (e: React.MouseEvent) => {
     const id = idAt(e.clientX, e.clientY); const el = els.find((x) => x.id === id);
     if (!el) return;
-    if (el.t === "text") setTextBox({ id: el.id, x: el.x, y: el.y, value: el.text || "" });
+    if (el.t === "text") setTextBox({ id: el.id, x: el.x, y: el.y - (el.fs || 20), value: el.text || "", fs: el.fs, font: el.font });
     if (el.t === "plot") {
       const ex = window.prompt("Edit function(s):", el.expr);
       if (ex) { try { parsePlotShort(ex); commit(els.map((x) => (x.id === el.id ? { ...x, expr: ex } : x))); } catch (err) { alert("Invalid: " + (err as Error).message); } }
@@ -463,7 +531,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     const tb = textBox; setTextBox(null);
     if (!tb) return;
     if (tb.id) commit(tb.value.trim() ? els.map((x) => (x.id === tb.id ? { ...x, text: tb.value } : x)) : els.filter((x) => x.id !== tb.id));
-    else if (tb.value.trim()) { commit([...els, { id: uid(), t: "text", x: tb.x, y: tb.y + 16, c: color, w: 1, text: tb.value, fs: 16 + width * 2 }]); }
+    else if (tb.value.trim()) { commit([...els, { id: uid(), t: "text", x: tb.x, y: tb.y + 16, c: color, w: 1, text: tb.value, fs: 16 + width * 2, ...(sketch ? { font: "hand" as const } : {}) }]); }
   };
 
   const exportSvg = () => {
@@ -501,13 +569,21 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   })();
   const cursor = tool === "hand" || space.current ? "grab" : tool === "select" ? "default" : tool === "text" ? "text" : "crosshair";
   const btn = "btn icon-btn ghost cbtn";
-  const delSel = () => { if (sel) { commit(els.filter((x) => !selIds.includes(x.id))); setSel(null); } };
+  const delSel = () => { if (selIds.length) { commit(els.filter((x) => !selIds.includes(x.id))); setSel(null); } };
+  const selEls = els.filter((x) => selIds.includes(x.id));
+  const oneGroup = selEls.length > 0 && !!selEls[0].g && selEls.every((x) => x.g === selEls[0].g);
+  const applyStyle = (on: boolean) => { setSketch(on); if (selEls.length) commit(els.map((x) => selIds.includes(x.id) ? (x.t === "text" ? { ...x, font: on ? x.font ?? "hand" : x.font === "hand" ? undefined : x.font } : ["rect", "ellipse", "diamond", "triangle", "poly", "line", "arrow"].includes(x.t) ? { ...x, sk: on ? x.sk || 1.1 : undefined } : x) : x)); };
 
   // templates: build each once for the thumbnails
   const built = useMemo(() => STAMPS.map((st) => ({ ...st, els: st.build() })), []);
-  const insertStamp = (i: number) => {
+  const cats = [...custom.cats, ...CATEGORIES];
+  const shown = [
+    ...custom.list.filter((t) => t.kind === "block" && t.cat === cat).map((t) => ({ key: t.id, name: t.name, els: t.els, mine: t.id })),
+    ...built.map((st, i) => ({ key: "b" + i, name: st.name, els: st.els, cat: st.cat, i })).filter((x) => x.cat === cat).map((x) => ({ key: x.key, name: x.name, els: x.els, mine: undefined as string | undefined, i: x.i })),
+  ];
+  const insertStamp = (fresh: El[]) => {
     const r = svgRef.current!.getBoundingClientRect();
-    const fresh = STAMPS[i].build(), g = uid();
+    const g = uid();
     const at0 = placeStamp(fresh, 0, 0).map((e) => ({ ...e, id: uid(), g }));
     const bs = at0.map(bbox), w = Math.max(...bs.map((q) => q.x + q.w)), h = Math.max(...bs.map((q) => q.y + q.h));
     const cx = (r.width / 2 - view.x) / view.k, cy = (r.height / 2 - view.y) / view.k;
@@ -516,7 +592,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     let px = cx - w / 2, py = cy - h / 2;
     for (let i = 0; i < 200 && hit(px, py); i++) py += 24;
     const placed = placeStamp(at0, px, py);
-    commit([...els, ...placed]); setSel(placed[0].id); setTool("select");
+    commit([...els, ...placed]); setSelIds(placed.map((x) => x.id)); setTool("select");
     if (py !== cy - h / 2) setView((v) => ({ ...v, y: r.height / 2 - (py + h / 2) * v.k })); // bring it into view
     if (window.innerWidth < 768) setPanel(null);
   };
@@ -529,13 +605,14 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <g ref={worldRef}>{els.filter((e) => !snapPrev?.remove.includes(e.id)).map((e) => <g key={e.id} data-id={e.id}><Shape e={e} /></g>)}</g>
           {draft && <Shape e={snapPrev ? snapPrev.el : draft} />}
+          {marq && <rect x={Math.min(marq.x, marq.x2)} y={Math.min(marq.y, marq.y2)} width={Math.abs(marq.x2 - marq.x)} height={Math.abs(marq.y2 - marq.y)} fill="var(--accent)" fillOpacity={0.06} stroke="var(--accent)" strokeDasharray="4 3" strokeWidth={1 / view.k} pointerEvents="none" />}
           {sb && <rect x={sb.x - 6} y={sb.y - 6} width={sb.w + 12} height={sb.h + 12} fill="none" stroke="var(--accent)" strokeDasharray="5 4" strokeWidth={1.5 / view.k} pointerEvents="none" />}
         </g>
       </svg>
 
       {textBox && (
         <textarea autoFocus className="bd absolute min-w-[120px] resize rounded border bg-transparent p-1"
-          style={{ left: textBox.x * view.k + view.x, top: (textBox.y) * view.k + view.y, fontSize: (16 + width * 2) * view.k, color: "var(--text)" }}
+          style={{ left: textBox.x * view.k + view.x, top: (textBox.y) * view.k + view.y, fontSize: (textBox.fs ?? 16 + width * 2) * view.k, color: "var(--text)", fontFamily: textBox.font === "hand" ? "Kalam,cursive" : textBox.font === "script" ? "Caveat,cursive" : undefined }}
           placeholder="Type… (Esc / click away to finish)" value={textBox.value}
           onChange={(e) => setTextBox({ ...textBox, value: e.target.value })} onBlur={commitText}
           onKeyDown={(e) => { if (e.key === "Escape") (e.target as HTMLElement).blur(); }} />
@@ -562,9 +639,17 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           <button className={btn} title="Undo (⌘Z)" aria-label="Undo" onClick={undo}><Icon name="undo" /></button>
           <button className={btn} title="Redo (⇧⌘Z)" aria-label="Redo" onClick={redo}><Icon name="redo" /></button>
           {sel && <button className={btn} title="Delete selection" aria-label="Delete selection" onClick={delSel}><Icon name="trash" /></button>}
-          {selEl?.g && <button className={btn} title="Ungroup: edit the template's parts one by one" aria-label="Ungroup" onClick={() => commit(els.map((x) => (selIds.includes(x.id) ? { ...x, g: undefined } : x)))}><Icon name="ungroup" /></button>}
+          {oneGroup && <button className={btn} title="Ungroup: edit the template's parts one by one" aria-label="Ungroup" onClick={() => commit(els.map((x) => (selIds.includes(x.id) ? { ...x, g: undefined } : x)))}><Icon name="ungroup" /></button>}
+          {selEls.length > 1 && !oneGroup && <button className={btn} title="Group: move these together" aria-label="Group" onClick={() => { const g = uid(); commit(els.map((x) => (selIds.includes(x.id) ? { ...x, g } : x))); }}><Icon name="template" /></button>}
+        </div>
+        <div className="dock-group">
+          <div className="seg" role="radiogroup" aria-label="Drawing style" title="Style for new shapes and text (also restyles the selection)">
+            <button role="radio" aria-checked={!sketch} className={!sketch ? "on" : ""} onClick={() => applyStyle(false)}>Clean</button>
+            <button role="radio" aria-checked={sketch} className={`sketch-label ${sketch ? "on" : ""}`} onClick={() => applyStyle(true)}>Sketch</button>
+          </div>
         </div>
         <div className="dock-group dock-main">
+          <button className={`btn ${panel === "save" ? "btn-primary" : ""}`} title={selIds.length ? "Save the selection as a template" : "Save this page as a page template"} onClick={() => setPanel(panel === "save" ? null : "save")}><Icon name="plus" /> Save as template</button>
           <button className={`btn ${panel === "templates" ? "btn-primary" : ""}`} aria-expanded={panel === "templates"} onClick={() => setPanel(panel === "templates" ? null : "templates")}><Icon name="template" /> Templates</button>
           {onPaper && <button className={`btn ${panel === "paper" ? "btn-primary" : ""}`} aria-expanded={panel === "paper"} onClick={() => setPanel(panel === "paper" ? null : "paper")}><Icon name="paper" /> Paper</button>}
           <button className={`${btn} ${panel === "more" ? "on" : ""}`} title="More options" aria-label="More options" aria-expanded={panel === "more"} onClick={() => setPanel(panel === "more" ? null : "more")}><Icon name="more" /></button>
@@ -601,26 +686,71 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
         <aside className="stamp-panel" aria-label="Templates">
           <div className="pop-head"><b>Templates</b><button className="btn icon-btn ghost" aria-label="Close templates" onClick={() => setPanel(null)}><Icon name="close" /></button></div>
           <div className="stamp-cats">
-            {CATEGORIES.map((c) => <button key={c} className={`chip-btn ${cat === c ? "on" : ""}`} onClick={() => setCat(c)}>{c}</button>)}
+            {cats.map((c) => <button key={c} className={`chip-btn ${cat === c ? "on" : ""} ${custom.cats.includes(c) ? "mine" : ""}`} onClick={() => setCat(c)}>{c}</button>)}
           </div>
           <div className="stamp-grid">
-            {built.map((st, i) => st.cat !== cat ? null : (
-              <button key={st.name} className="stamp" onClick={() => insertStamp(i)} title={`Insert ${st.name}`}>
-                <StampThumb els={st.els} />
-                <span>{st.name}</span>
-              </button>
+            {shown.map((st) => (
+              <div key={st.key} className="stamp-wrap">
+                <button className="stamp" onClick={() => insertStamp(st.mine ? st.els : STAMPS[(st as { i: number }).i].build())} title={`Insert ${st.name}`}>
+                  <StampThumb els={st.els} />
+                  <span>{st.name}</span>
+                </button>
+                {st.mine && <button className="stamp-del" aria-label={`Delete template ${st.name}`} title="Delete this template" onClick={() => confirm(`Delete the template "${st.name}"?`) && custom.remove(st.mine!)}><Icon name="close" /></button>}
+              </div>
             ))}
+            {shown.length === 0 && <p className="muted col-span-2 text-sm">No templates here yet.</p>}
           </div>
-          <p className="stamp-hint">Tap a template to drop it in the middle of the page. Drag to move it; use Ungroup to edit its parts.</p>
+          <div className="stamp-foot">
+            <span className="flex-1">Tap to drop in the middle of the page. Drag to move; Ungroup to edit parts.</span>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button className="btn flex-1" onClick={() => setPanel("save")}><Icon name="plus" /> New template</button>
+            <button className="btn" title="Download your templates as a file" disabled={!custom.list.length} onClick={custom.exportFile}><Icon name="download" /></button>
+            <label className="btn cursor-pointer" title="Add templates from a file">Import<input type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) custom.importFile(f).then((n) => alert(n ? `Added ${n} template(s).` : "No templates found in that file.")); e.target.value = ""; }} /></label>
+          </div>
         </aside>
+      )}
+
+      {panel === "save" && (
+        <SaveTemplate count={selEls.length} defaultCat={custom.cats[0] ?? "My templates"} cats={custom.cats}
+          onCancel={() => setPanel(null)}
+          onSave={(name, category, whole) => {
+            const src = whole ? els : selEls;
+            if (!src.length) { alert("This page is empty. Draw something or add a template first."); return; }
+            const norm = placeStamp(src.map((x) => ({ ...x, g: undefined })), 0, 0);
+            custom.add({ name, cat: category, kind: whole ? "page" : "block", paper: whole ? paper : undefined, els: norm });
+            setPanel("templates"); if (!whole) setCat(category);
+          }} />
       )}
     </div>
   );
 }
 
-function StampThumb({ els }: { els: El[] }) {
+export function StampThumb({ els }: { els: El[] }) {
   const bs = els.map(bbox);
   const x = Math.min(...bs.map((q) => q.x)) - 8, y = Math.min(...bs.map((q) => q.y)) - 8;
   const w = Math.max(...bs.map((q) => q.x + q.w)) + 8 - x, h = Math.max(...bs.map((q) => q.y + q.h)) + 8 - y;
   return <svg viewBox={`${x} ${y} ${w} ${h}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">{els.map((e) => <Shape key={e.id} e={e} />)}</svg>;
+}
+
+function SaveTemplate({ count, cats, defaultCat, onSave, onCancel }: { count: number; cats: string[]; defaultCat: string; onSave: (name: string, cat: string, whole: boolean) => void; onCancel: () => void }) {
+  const [name, setName] = useState("");
+  const [cat, setCat] = useState(defaultCat);
+  const [whole, setWhole] = useState(count === 0);
+  return (
+    <form className="pop save-pop" onSubmit={(e) => { e.preventDefault(); if (name.trim()) onSave(name.trim(), cat.trim() || "My templates", whole); }}>
+      <div className="pop-head"><b>Save as template</b><button type="button" className="btn icon-btn ghost" aria-label="Close" onClick={onCancel}><Icon name="close" /></button></div>
+      <div className="seg mb-3 w-full" role="radiogroup" aria-label="What to save">
+        <button type="button" role="radio" aria-checked={!whole} disabled={!count} className={`flex-1 justify-center ${!whole ? "on" : ""}`} onClick={() => setWhole(false)}>Selection ({count})</button>
+        <button type="button" role="radio" aria-checked={whole} className={`flex-1 justify-center ${whole ? "on" : ""}`} onClick={() => setWhole(true)}>Whole page</button>
+      </div>
+      <p className="muted mb-3 text-xs leading-relaxed">{whole ? "Saves everything on this page, with its paper, as a layout you can start new pages from." : "Saves the selected items as a block you can drop onto any page. Tip: drag a box with the select tool to pick several items."}</p>
+      <label className="field-label">Name<input autoFocus className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder={whole ? "Lecture notes layout" : "Bug table"} /></label>
+      {!whole && <label className="field-label mt-2">Category
+        <input className="field" list="tpl-cats" value={cat} onChange={(e) => setCat(e.target.value)} />
+        <datalist id="tpl-cats">{["My templates", ...cats].filter((c, i, a) => a.indexOf(c) === i).map((c) => <option key={c} value={c} />)}</datalist>
+      </label>}
+      <div className="mt-3 flex justify-end gap-2"><button type="button" className="btn" onClick={onCancel}>Cancel</button><button className="btn btn-primary" disabled={!name.trim()}>Save template</button></div>
+    </form>
+  );
 }

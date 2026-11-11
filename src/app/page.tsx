@@ -9,8 +9,7 @@ import { useBackup } from "@/lib/backup";
 import { AIPanel } from "@/components/AIPanel";
 import { AISettings, defaultAI, normalizeAI } from "@/lib/ai";
 import { Icon } from "@/components/Icon";
-import { PaperPicker } from "@/components/Paper";
-import { Paper } from "@/lib/types";
+import { NewPageDialog } from "@/components/NewPage";
 
 type View = { kind: "all" } | { kind: "scribbles" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
@@ -18,6 +17,7 @@ const FONTS = {
   sans: "\"Hanken Grotesk\", ui-sans-serif, system-ui, sans-serif",
   serif: "Newsreader, ui-serif, Georgia, serif",
   mono: "\"JetBrains Mono\", ui-monospace, SFMono-Regular, monospace",
+  hand: "Kalam, \"Comic Sans MS\", cursive",
 };
 
 export default function Home() {
@@ -94,7 +94,7 @@ export default function Home() {
 
   const [showNew, setShowNew] = useState(false);
   const [pickPaper, setPickPaper] = useState(false);
-  const newScribble = (paper: Paper) => { setPickPaper(false); newNote({ kind: "canvas", drawing: [], paper, title: "" }); };
+  const newScribble = (p: Pick<Note, "paper" | "drawing" | "title">) => { setPickPaper(false); newNote({ kind: "canvas", ...p }); };
   const newNote = (init: Partial<Note> = {}) => {
     setShowNew(false);
     const id = create({ folder: view.kind === "folder" ? view.name : "", tags: view.kind === "tag" ? [view.name] : [], ...init });
@@ -226,17 +226,7 @@ export default function Home() {
       )}
       {!showAI && !current && <button className="btn fab" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}><Icon name="sparkle" /> AI</button>}
 
-      {pickPaper && (
-        <div className="modal-scrim new-paper" onClick={() => setPickPaper(false)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-label="Choose paper" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head"><h2 className="pane-title">New scribble page</h2><button className="btn icon-btn ghost" aria-label="Close" onClick={() => setPickPaper(false)}><Icon name="close" /></button></div>
-            <div className="modal-body">
-              <p className="muted mb-3 text-sm">Pick a paper. You can change it later from the Paper button on the page.</p>
-              <PaperPicker onPick={newScribble} />
-            </div>
-          </div>
-        </div>
-      )}
+      {pickPaper && <NewPageDialog onCreate={newScribble} onClose={() => setPickPaper(false)} />}
       {showSettings && <SettingsPanel settings={settings} onChange={setSettings} notes={notes} onImport={importNotes} backup={backup} onClose={() => setShowSettings(false)} />}
     </div>
   );
