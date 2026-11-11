@@ -10,6 +10,7 @@ import { AIPanel } from "@/components/AIPanel";
 import { AISettings, defaultAI, normalizeAI } from "@/lib/ai";
 import { Icon } from "@/components/Icon";
 import { NewPageDialog } from "@/components/NewPage";
+import { ImportDialog } from "@/components/ImportDialog";
 
 type View = { kind: "all" } | { kind: "scribbles" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
@@ -94,6 +95,19 @@ export default function Home() {
 
   const [showNew, setShowNew] = useState(false);
   const [pickPaper, setPickPaper] = useState(false);
+  const [importing, setImporting] = useState<File[] | null>(null);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    const off = () => setDragging(false);
+    window.addEventListener("drop", off, true); window.addEventListener("dragend", off, true);
+    return () => { window.removeEventListener("drop", off, true); window.removeEventListener("dragend", off, true); };
+  }, []);
+  const pickFiles = () => { const i = document.createElement("input"); i.type = "file"; i.multiple = true; i.onchange = () => { const fs = Array.from(i.files ?? []); if (fs.length) setImporting(fs); }; i.click(); };
+  const imported = (list: Partial<Note>[]) => {
+    let first = "";
+    for (const n of [...list].reverse()) first = create({ folder: view.kind === "folder" ? view.name : "", ...n });
+    setView({ kind: "all" }); setSelected(first);
+  };
   const newScribble = (p: Pick<Note, "paper" | "drawing" | "title">) => { setPickPaper(false); newNote({ kind: "canvas", ...p }); };
   const newNote = (init: Partial<Note> = {}) => {
     setShowNew(false);
@@ -112,7 +126,11 @@ export default function Home() {
   if (!ready) return null;
 
   return (
-    <div className="app flex h-[100dvh]">
+    <div className="app flex h-[100dvh]"
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target || !e.relatedTarget) setDragging(false); }}
+      onDrop={(e) => { setDragging(false); const fs = Array.from(e.dataTransfer.files); if (fs.length) { e.preventDefault(); setImporting(fs); } }}>
+      {dragging && <div className="drop-overlay" aria-hidden="true"><div><Icon name="upload" /><b>Drop to import</b><span>PDF, images, Word, PowerPoint, Excel, CSV, text and more</span></div></div>}
       <aside className={`sidebar hidden w-60 shrink-0 flex-col ${hideSide ? "" : "md:flex"}`}>
         <div className="brand">
           <span className="brand-mark" aria-hidden="true"><Icon name="pen" /></span>
@@ -143,6 +161,7 @@ export default function Home() {
                 <div className="fixed inset-0 z-30" onClick={() => setShowNew(false)} />
                 <div className="menu right-0 w-60">
                   <button className="menu-item" onClick={() => newNote()}><Icon name="notes" /><span><b>Markdown note</b><small>Text, maths, code, diagrams</small></span></button>
+                  <button className="menu-item" onClick={() => { setShowNew(false); pickFiles(); }}><Icon name="upload" /><span><b>Import file…</b><small>PDF, image, Word, PowerPoint, Excel, CSV, text…</small></span></button>
                   <button className="menu-item" onClick={() => { setShowNew(false); setPickPaper(true); }}><Icon name="scribble" /><span><b>Scribble page</b><small>Handwriting, doodles, tables and charts</small></span></button>
                   <div className="nav-group">Templates</div>
                   {Object.entries(TEMPLATES).map(([k, t]) => (
@@ -172,7 +191,7 @@ export default function Home() {
                 <span className="note-card-title flex-1 truncate">{n.title || "Untitled"}</span>
                 {n.pinned && <Icon name="pin" className="accent-text" />}
               </div>
-              <div className="note-card-body">{n.kind === "canvas" ? (n.drawing?.length ? `Scribble page · ${n.drawing.length} strokes and shapes` : "Empty scribble page") : n.body.replace(/[#*`>\-\[\]$]/g, "").slice(0, 120) || "Empty note"}</div>
+              <div className="note-card-body">{n.kind === "canvas" ? (n.drawing?.length ? `Scribble page · ${n.drawing.length} strokes and shapes` : "Empty scribble page") : n.body.replace(/!?\[([^\]]*)\]\((?:asset:)?[^)]*\)/g, "$1").replace(/^\s*\|?[\s:|-]+\|[\s:|-]*$/gm, "").replace(/[#*`>|\[\]$]|(^|\s)-(?=\s)/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "Empty note"}</div>
               <div className="note-card-meta">
                 <span>{n.deletedAt ? `Deleted ${ago(n.deletedAt)}` : ago(n.updatedAt)}</span>
                 {n.folder && <span className="pill"><Icon name="folder" />{n.folder}</span>}
@@ -207,6 +226,7 @@ export default function Home() {
               <div className="flex flex-wrap justify-center gap-2">
                 <button className="btn btn-primary" onClick={() => newNote()}><Icon name="notes" /> New note</button>
                 <button className="btn" onClick={() => setPickPaper(true)}><Icon name="scribble" /> New scribble page</button>
+                <button className="btn" onClick={pickFiles}><Icon name="upload" /> Import file</button>
               </div>
               <dl className="shortcuts">
                 <div><dt><kbd>⌘</kbd><kbd>J</kbd></dt><dd>AI assistant</dd></div>
@@ -226,6 +246,7 @@ export default function Home() {
       )}
       {!showAI && !current && <button className="btn fab" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}><Icon name="sparkle" /> AI</button>}
 
+      {importing && <ImportDialog files={importing} onDone={imported} onClose={() => setImporting(null)} />}
       {pickPaper && <NewPageDialog onCreate={newScribble} onClose={() => setPickPaper(false)} />}
       {showSettings && <SettingsPanel settings={settings} onChange={setSettings} notes={notes} onImport={importNotes} backup={backup} onClose={() => setShowSettings(false)} />}
     </div>

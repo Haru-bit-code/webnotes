@@ -1,6 +1,6 @@
 export type Pt = [number, number];
 
-export type ElType = "pen" | "hl" | "line" | "arrow" | "rect" | "ellipse" | "text" | "axes" | "plot" | "diamond" | "triangle" | "cube" | "poly" | "path";
+export type ElType = "pen" | "hl" | "line" | "arrow" | "rect" | "ellipse" | "text" | "axes" | "plot" | "diamond" | "triangle" | "cube" | "poly" | "path" | "image";
 
 // One drawing object on a canvas note. Coordinates are in world space.
 export type El = {
@@ -26,6 +26,8 @@ export type El = {
   rx?: number;                                     // rect corner radius
   op?: number;                                     // opacity 0..1
   lock?: boolean;                                  // part of a page template background: not selectable
+  src?: string;                                    // image: id of the file in the asset store
+  pg?: [number, number, number];                   // imported PDF page: index, width and height in points
 };
 
 export type Paper = "blank" | "dots" | "grid" | "graph" | "ruled-narrow" | "ruled" | "ruled-wide" | "handwriting" | "cornell" | "isometric" | "music" | "sheet";

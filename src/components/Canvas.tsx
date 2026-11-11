@@ -5,7 +5,9 @@ import { parsePlotShort, plotInner } from "@/lib/charts";
 import { CATEGORIES, STAMPS, placeStamp } from "@/lib/stamps";
 import { useCustomTemplates } from "@/lib/customTemplates";
 import { KIT_ELEMENTS } from "@/lib/kits";
-import { loadSvg } from "@/lib/svgImport";
+import { loadSvg, svgToEls } from "@/lib/svgImport";
+import { useAssetUrl } from "@/lib/assets";
+import { imageEl, pdfPages } from "@/lib/importers";
 import { PaperLayer, PaperPicker } from "./Paper";
 import { Icon } from "./Icon";
 import rough from "roughjs";
@@ -65,6 +67,13 @@ function scaleEl(e: El, ax: number, ay: number, k: number): El {
     ...(e.fs && { fs: Math.max(6, e.fs * k) }),
     ...(e.dx !== undefined && { dx: e.dx * k }), ...(e.dy !== undefined && { dy: e.dy * k }),
   };
+}
+
+function AssetImage({ e, b }: { e: El; b: { x: number; y: number; w: number; h: number } }) {
+  const url = useAssetUrl(e.src);
+  if (url) return <image href={url} x={b.x} y={b.y} width={b.w} height={b.h} preserveAspectRatio="none" />;
+  return <g><rect x={b.x} y={b.y} width={b.w} height={b.h} fill="#f1f5f9" stroke="#cbd5e1" strokeDasharray="6 5" />
+    <text x={b.x + 16} y={b.y + 32} fontSize={16} fill="#64748b">Image not stored in this browser</text></g>;
 }
 
 // ---- hand-drawn ("sketch") rendering via rough.js, deterministic per element id ----
@@ -156,6 +165,7 @@ function ShapeBody({ e }: { e: El }) {
         <line x1={e.x} y1={e.y} x2={e.x2} y2={e.y2} stroke="transparent" strokeWidth={14} /></>;
     }
     case "rect": return <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={e.rx ?? 3} {...common} stroke={e.w ? s : "none"} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
+    case "image": return <AssetImage e={e} b={b} />;
     case "path": {
       const [ox, oy, ow, oh] = e.ob ?? [0, 0, 1, 1], sx = (e.x2! - e.x) / ow, sy = (e.y2! - e.y) / oh;
       return <path d={e.d} transform={`translate(${e.x - ox * sx} ${e.y - oy * sy}) scale(${sx} ${sy})`} stroke={e.w ? s : "none"} strokeWidth={e.w / Math.max(Math.abs(sx), 1e-6)}
@@ -440,6 +450,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     const onCopy = (e: ClipboardEvent) => copy(e, false), onCut = (e: ClipboardEvent) => copy(e, true);
     const onPaste = (e: ClipboardEvent) => {
       if (!active.current || inField()) return;
+      const files = Array.from(e.clipboardData?.files ?? []);
+      if (files.length) { e.preventDefault(); insertFiles(files); return; }
       const text = e.clipboardData?.getData("text/plain") ?? "";
       e.preventDefault();
       if (clip.current && text === clip.current.marker) { pasteEls(clip.current.els); return; }
@@ -677,31 +689,85 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     }
   };
 
-  const exportSvg = () => {
+  // SVG of the page (or one region of it), with stored images inlined so the file stands alone
+  const buildSvg = async (region?: { x: number; y: number; w: number; h: number }) => {
     const all = els.map(bbox);
     if (!all.length) return null;
-    const x = Math.min(...all.map((b) => b.x)) - 24, y = Math.min(...all.map((b) => b.y)) - 24;
-    const w = Math.max(...all.map((b) => b.x + b.w)) + 24 - x, h = Math.max(...all.map((b) => b.y + b.h)) + 24 - y;
+    let x: number, y: number, w: number, h: number;
+    if (region) ({ x, y, w, h } = region);
+    else { x = Math.min(...all.map((q) => q.x)) - 24; y = Math.min(...all.map((q) => q.y)) - 24; w = Math.max(...all.map((q) => q.x + q.w)) + 24 - x; h = Math.max(...all.map((q) => q.y + q.h)) + 24 - y; }
     const cs = getComputedStyle(document.documentElement);
-    const fg = cs.getPropertyValue("--text").trim() || "#111", bg = cs.getPropertyValue("--bg").trim() || "#fff";
+    const fg = hasPage ? "#1f2937" : cs.getPropertyValue("--text").trim() || "#111", bg = hasPage ? "#ffffff" : cs.getPropertyValue("--bg").trim() || "#fff";
     const acc = cs.getPropertyValue("--accent").trim() || "#2b59c3", raised = cs.getPropertyValue("--raised").trim() || bg;
-    const inner = worldRef.current!.innerHTML.replaceAll("var(--accent)", acc).replaceAll("var(--raised)", raised);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${x} ${y} ${w} ${h}" color="${fg}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${bg}"/>${inner}</svg>`;
+    let inner = worldRef.current!.innerHTML.replaceAll("var(--accent)", acc).replaceAll("var(--raised)", raised);
+    for (const u of [...new Set([...inner.matchAll(/href="(blob:[^"]+)"/g)].map((m) => m[1]))]) {
+      const blob = await (await fetch(u)).blob();
+      const data = await new Promise<string>((ok) => { const r = new FileReader(); r.onload = () => ok(r.result as string); r.readAsDataURL(blob); });
+      inner = inner.replaceAll(u, data);
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="${x} ${y} ${w} ${h}" color="${fg}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${bg}"/>${inner}</svg>`;
     return { svg, w, h };
   };
-  const download = (href: string, name: string) => { const a = document.createElement("a"); a.href = href; a.download = name; a.click(); };
-  const fname = (ext: string) => (title.trim() || "canvas").replace(/[^\w-]+/g, "_") + "." + ext;
-  const doExport = (kind: "png" | "svg") => {
-    const o = exportSvg(); if (!o) return alert("Nothing to export yet");
-    const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(o.svg);
-    if (kind === "svg") return download(url, fname("svg"));
+  const svgToPng = (svg: string, w: number, h: number, scale: number) => new Promise<Blob>((ok, fail) => {
     const img = new Image();
     img.onload = () => {
-      const c = document.createElement("canvas"); c.width = o.w * 2; c.height = o.h * 2;
-      const ctx = c.getContext("2d")!; ctx.scale(2, 2); ctx.drawImage(img, 0, 0, o.w, o.h);
-      download(c.toDataURL("image/png"), fname("png"));
+      const c = document.createElement("canvas"); c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+      const ctx = c.getContext("2d")!; ctx.scale(scale, scale); ctx.drawImage(img, 0, 0, w, h);
+      c.toBlob((b) => (b ? ok(b) : fail(new Error("Couldn't draw the page"))), "image/png");
     };
-    img.src = url;
+    img.onerror = () => fail(new Error("Couldn't draw the page"));
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  });
+  const download = (href: string, name: string) => { const a = document.createElement("a"); a.href = href; a.download = name; a.click(); };
+  const fname = (ext: string) => (title.trim() || "canvas").replace(/[^\w-]+/g, "_") + "." + ext;
+  const [busyMsg, setBusyMsg] = useState<string | null>(null);
+  const doExport = async (kind: "png" | "svg" | "pdf") => {
+    try {
+      if (kind !== "pdf") {
+        const o = await buildSvg(); if (!o) return alert("Nothing to export yet");
+        if (kind === "svg") return download("data:image/svg+xml;charset=utf-8," + encodeURIComponent(o.svg), fname("svg"));
+        const png = await svgToPng(o.svg, o.w, o.h, 2); const u = URL.createObjectURL(png); download(u, fname("png")); setTimeout(() => URL.revokeObjectURL(u), 4000); return;
+      }
+      // PDF: one PDF page per imported PDF page (with everything written on it), else the whole drawing on one page
+      setBusyMsg("Making PDF…");
+      const { PDFDocument } = await import("pdf-lib");
+      const pdf = await PDFDocument.create();
+      const pages = els.filter((x) => x.t === "image" && x.pg).sort((a, b) => a.pg![0] - b.pg![0] || a.y - b.y);
+      const regions = pages.length ? pages.map((p) => ({ r: bbox(p), pw: p.pg![1], ph: p.pg![2] })) : await (async () => { const o = await buildSvg(); return o ? [{ r: null, pw: o.w * 0.75, ph: o.h * 0.75 }] : []; })();
+      if (!regions.length) { setBusyMsg(null); return alert("Nothing to export yet"); }
+      for (const [i, reg] of regions.entries()) {
+        setBusyMsg(`Making PDF… page ${i + 1} of ${regions.length}`);
+        const o = await buildSvg(reg.r ?? undefined); if (!o) continue;
+        const scale = Math.min(3, 2400 / o.w);
+        const png = await pdf.embedPng(new Uint8Array(await (await svgToPng(o.svg, o.w, o.h, scale)).arrayBuffer()));
+        const page = pdf.addPage([reg.pw, reg.ph]); page.drawImage(png, { x: 0, y: 0, width: reg.pw, height: reg.ph });
+      }
+      const bytes = await pdf.save();
+      const u = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" })); download(u, fname("pdf")); setTimeout(() => URL.revokeObjectURL(u), 4000);
+    } catch (e) { alert("Export failed: " + (e as Error).message); }
+    finally { setBusyMsg(null); }
+  };
+
+  // files dropped, pasted or picked onto the page: images and PDF pages become items you can write on
+  const insertFiles = async (files: File[], at?: Pt) => {
+    let [x, y] = at ?? (lastPt.current ?? centre());
+    const added: El[] = [];
+    try {
+      for (const f of files) {
+        const n = f.name.toLowerCase();
+        if (f.type === "application/pdf" || n.endsWith(".pdf")) {
+          const r = await pdfPages(f, x, y, 900, false, (m) => setBusyMsg(m));
+          added.push(...r.els); if (r.more) alert(`Only the first 200 pages were added (${r.more} more).`);
+        } else if (n.endsWith(".svg")) {
+          const list = placeStamp(svgToEls(await f.text(), { group: true }), x, y); added.push(...list);
+        } else if (f.type.startsWith("image/")) {
+          setBusyMsg(`Adding ${f.name}…`); added.push(await imageEl(f, x, y, 700, false, f.name));
+        } else { alert(`"${f.name}" can't be placed on a page. Use New → Import file to open it as a note.`); continue; }
+        const bs = added.map(bbox); y = Math.max(...bs.map((q) => q.y + q.h)) + 40;
+      }
+      if (added.length) { commit([...elsRef.current, ...added]); setSelIds(added.length === 1 ? [added[0].id] : []); setTool("select"); }
+    } catch (e) { alert((e as Error).message); }
+    finally { setBusyMsg(null); }
   };
 
   const selEl = els.find((x) => x.id === sel);
@@ -746,7 +812,10 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   };
 
   return (
-    <div ref={rootRef} className="relative h-full w-full select-none overflow-hidden">
+    <div ref={rootRef} className="relative h-full w-full select-none overflow-hidden"
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; } }}
+      onDrop={(e) => { const fs = Array.from(e.dataTransfer.files); if (!fs.length) return; e.preventDefault(); e.stopPropagation(); active.current = true; insertFiles(fs, toWorld(e.clientX, e.clientY)); }}>
+      {busyMsg && <div className="busy-toast" role="status">{busyMsg}</div>}
       <svg ref={svgRef} className="h-full w-full touch-none" style={{ cursor, color: hasPage ? "#1f2937" : undefined }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDouble}>
         <PaperLayer paper={paper} view={view} />
@@ -811,6 +880,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           </div>
         </div>
         <div className="dock-group dock-main">
+          <label className="btn cursor-pointer" title="Add an image or PDF to this page to write on"><Icon name="image" /> Add file
+            <input type="file" hidden multiple accept="image/*,.pdf,application/pdf,.svg" onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ""; if (fs.length) { active.current = true; insertFiles(fs); } }} /></label>
           <button className={`btn ${panel === "save" ? "btn-primary" : ""}`} title={selIds.length ? "Save the selection as a template" : "Save this page as a page template"} onClick={() => setPanel(panel === "save" ? null : "save")}><Icon name="plus" /> Save as template</button>
           <button className={`btn ${panel === "templates" ? "btn-primary" : ""}`} aria-expanded={panel === "templates"} onClick={() => setPanel(panel === "templates" ? null : "templates")}><Icon name="template" /> Templates</button>
           {onPaper && <button className={`btn ${panel === "paper" ? "btn-primary" : ""}`} aria-expanded={panel === "paper"} onClick={() => setPanel(panel === "paper" ? null : "paper")}><Icon name="paper" /> Paper</button>}
@@ -833,6 +904,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           <div className="flex flex-wrap gap-2 pt-2">
             <button className="btn" onClick={() => doExport("png")}><Icon name="download" /> PNG</button>
             <button className="btn" onClick={() => doExport("svg")}><Icon name="download" /> SVG</button>
+            <button className="btn" title="One PDF page per imported PDF page, with your writing on it" onClick={() => { setPanel(null); doExport("pdf"); }}><Icon name="download" /> PDF</button>
             <button className="btn btn-danger" onClick={() => confirm("Clear the whole page?") && commit([])}>Clear page</button>
           </div>
         </div>

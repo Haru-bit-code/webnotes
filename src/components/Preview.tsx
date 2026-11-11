@@ -2,6 +2,7 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { renderMarkdown } from "@/lib/markdown";
 import { Note } from "@/lib/types";
+import { assetUrl, downloadAsset } from "@/lib/assets";
 
 const mermaidCache = new Map<string, string>(); // theme + source → rendered SVG
 const lastSvg = new Map<string, string>(); // theme + diagram position → last good SVG
@@ -19,6 +20,10 @@ export function Preview({ body, notes = [], onOpenNote, onWikiLink, onToggleTask
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<HTMLElement[]>([]);
   useLayoutEffect(() => {
+    ref.current?.querySelectorAll<HTMLImageElement>("img[data-asset]").forEach((img) => {
+      if (img.src) return;
+      assetUrl(img.dataset.asset!).then((u) => { if (u) img.src = u; else { img.alt = "(image not stored in this browser)"; img.classList.add("asset-missing"); } });
+    });
     ref.current?.querySelectorAll<HTMLInputElement>("input[data-task]").forEach((c) => { c.disabled = !onToggleTask; });
     const nodes = Array.from(ref.current?.querySelectorAll<HTMLElement>("pre.mermaid") ?? []).filter((n) => !handled.current.has(n));
     if (!nodes.length) return;
@@ -66,6 +71,8 @@ export function Preview({ body, notes = [], onOpenNote, onWikiLink, onToggleTask
 
   return <div ref={ref} className={`md ${className}`}
     onClick={(e) => {
+      const file = (e.target as HTMLElement).closest<HTMLElement>("a[data-asset-file]");
+      if (file) { e.preventDefault(); downloadAsset(file.dataset.assetFile!, file.textContent || "file"); return; }
       const el = e.target as HTMLElement;
       const wiki = el.closest<HTMLElement>("[data-wiki]")?.dataset.wiki;
       if (wiki) { e.preventDefault(); onWikiLink?.(decodeURIComponent(wiki)); return; }

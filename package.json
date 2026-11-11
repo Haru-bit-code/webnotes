@@ -11,16 +11,24 @@
     "@anthropic-ai/sdk": "^0.131.0",
     "@fontsource/caveat": "^5.2.6",
     "@fontsource/kalam": "^5.2.5",
+    "docx": "^9.1.1",
     "dompurify": "^3.4.16",
     "highlight.js": "^11.12.0",
+    "jszip": "^3.10.1",
     "katex": "^0.18.10",
+    "mammoth": "^1.9.0",
     "marked": "^18.0.14",
     "marked-katex-extension": "^5.1.13",
     "mermaid": "^12.1.0",
     "next": "^15",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19",
     "react-dom": "^19",
-    "roughjs": "^4.6.6"
+    "roughjs": "^4.6.6",
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -28,6 +36,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/turndown": "^5.0.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -4,6 +4,8 @@ import { Note } from "@/lib/types";
 import { Preview } from "./Preview";
 import { Canvas } from "./Canvas";
 import { InkLayer } from "./InkLayer";
+import { putAsset, fmtSize } from "@/lib/assets";
+import { download, noteToDocx, noteToHtml } from "@/lib/exporters";
 import { SNIPPETS } from "@/lib/templates";
 import { backlinksTo, toggleTask } from "@/lib/markdown";
 import { Icon } from "./Icon";
@@ -42,6 +44,28 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
     if (e.key === "Tab") { e.preventDefault(); insert("  "); }
   };
 
+  const [showExport, setShowExport] = useState(false);
+  const fileName = (ext: string) => (note.title.trim() || "note").replace(/[^\w-]+/g, "_") + "." + ext;
+  const doExport = async (kind: "md" | "docx" | "html") => {
+    setShowExport(false);
+    try {
+      if (kind === "md") exportMd();
+      else download(kind === "docx" ? await noteToDocx(note.title, note.body) : await noteToHtml(note.title, note.body), fileName(kind));
+    } catch (e) { alert("Export failed: " + (e as Error).message); }
+  };
+  // images pasted or dropped into the text: saved in this browser, linked as ![](asset:id); other files attached
+  const insertFiles = async (files: File[]) => {
+    const parts: string[] = [];
+    for (const f of files) {
+      try {
+        const id = await putAsset(f, f.name);
+        parts.push(f.type.startsWith("image/") ? `![${f.name.replace(/\.[^.]+$/, "")}](asset:${id})` : `📎 [${f.name}](asset:${id}) · ${fmtSize(f.size)}`);
+      } catch (e) { alert((e as Error).message); }
+    }
+    if (!parts.length) return;
+    const el = ta.current, at = el ? el.selectionStart : note.body.length, text = "\n" + parts.join("\n") + "\n";
+    onChange({ body: note.body.slice(0, at) + text + note.body.slice(at) });
+  };
   const exportMd = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([`# ${note.title}\n\n${note.body}`], { type: "text/markdown" }));
@@ -63,7 +87,17 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
           </button>
         )}
         <span className="flex-1" />
-        {note.kind === "doc" && <button className="btn icon-btn ghost" title="Download as Markdown" aria-label="Download as Markdown" onClick={exportMd}><Icon name="download" /></button>}
+        {note.kind === "doc" && <span className="relative">
+          <button className="btn icon-btn ghost" title="Download as…" aria-label="Download as" aria-expanded={showExport} onClick={() => setShowExport((v) => !v)}><Icon name="download" /></button>
+          {showExport && <>
+            <div className="fixed inset-0 z-30" onClick={() => setShowExport(false)} />
+            <div className="menu right-0 w-56">
+              <button className="menu-item" onClick={() => doExport("docx")}><Icon name="notes" /><span><b>Word (.docx)</b><small>Headings, lists, tables, images</small></span></button>
+              <button className="menu-item" onClick={() => doExport("md")}><Icon name="text" /><span><b>Markdown (.md)</b><small>Plain text with formatting marks</small></span></button>
+              <button className="menu-item" onClick={() => doExport("html")}><Icon name="download" /><span><b>Web page (.html)</b><small>Opens in any browser</small></span></button>
+            </div>
+          </>}
+        </span>}
         <button className={`btn icon-btn ghost ${note.pinned ? "accent-text" : ""}`} title={note.pinned ? "Unpin" : "Pin to top"} aria-pressed={note.pinned} onClick={() => onChange({ pinned: !note.pinned })}><Icon name="pin" /></button>
         <button className="btn icon-btn ghost" title={note.archived ? "Unarchive" : "Archive"} aria-label={note.archived ? "Unarchive" : "Archive"} onClick={() => onChange({ archived: !note.archived })}><Icon name="archive" /></button>
         {note.deletedAt
@@ -117,7 +151,10 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
           {mode !== "preview" && (
             <textarea ref={ta} className={`source h-full resize-none ${mode === "split" ? "w-1/2 border-r bd" : "w-full"}`}
               placeholder="Write in Markdown… use ＋ Insert for math, flowcharts, charts, plots" value={note.body}
-              onKeyDown={onKey} onChange={(e) => onChange({ body: e.target.value })} />
+              onKeyDown={onKey} onChange={(e) => onChange({ body: e.target.value })}
+              onPaste={(e) => { const fs = Array.from(e.clipboardData.files); if (fs.length) { e.preventDefault(); insertFiles(fs); } }}
+              onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
+              onDrop={(e) => { const fs = Array.from(e.dataTransfer.files); if (fs.length) { e.preventDefault(); e.stopPropagation(); insertFiles(fs); } }} />
           )}
           {mode !== "edit" && (
             <div className={`reading h-full overflow-y-auto ${mode === "split" ? "w-1/2" : "w-full"} ${scribble ? "scribbling" : ""}`}>

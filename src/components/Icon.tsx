@@ -42,6 +42,9 @@ const P: Record<string, React.ReactNode> = {
   more: <><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></>,
   scribble: <path d="M3 17c3-6 5-10 7-9s-2 9 1 9 4-8 6-7-1 6 1 6 2-2 3-3" />,
   minus: <path d="M5 12h14" />,
+  image: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2" /><path d="M21 16l-5-5-8 9" /></>,
+  upload: <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />,
+  file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /></>,
   ungroup: <><rect x="3" y="3" width="10" height="10" rx="1.5" /><rect x="11" y="11" width="10" height="10" rx="1.5" strokeDasharray="3 2" /></>,
 };
 

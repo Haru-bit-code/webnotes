@@ -77,6 +77,7 @@ export function SettingsPanel({ settings, onChange, notes, onImport, backup, onC
             </section>
             <section className="mt-5 space-y-2 text-sm">
               <h3 className="section-title">Export and import</h3>
+              <p className="muted text-xs leading-relaxed">Imported files (images, PDF pages, attachments) are kept in this browser and are not inside the JSON backup. Download important ones from the note, or export pages as PDF.</p>
               <div className="flex flex-wrap gap-2">
                 <button className="btn" onClick={exportJson}><Icon name="download" /> Export JSON</button>
                 <label className="btn cursor-pointer">Import JSON

@@ -31,6 +31,15 @@ const marked = new Marked(
     gfm: true,
     breaks: true,
     renderer: {
+      // files stored in this browser: resolved to real URLs by the Preview after rendering
+      image({ href, text }: { href: string; text: string }) {
+        if (href?.startsWith("asset:")) return `<img data-asset="${esc(href.slice(6))}" alt="${esc(text || "")}" class="asset-img">`;
+        return false as unknown as string;
+      },
+      link({ href, tokens }: { href: string; tokens: unknown[] }) {
+        if (href?.startsWith("asset:")) return `<a href="#" class="attachment" data-asset-file="${esc(href.slice(6))}">${this.parser.parseInline(tokens as never)}</a>`;
+        return false as unknown as string;
+      },
       checkbox({ checked }: { checked: boolean }) { return `<input type="checkbox" data-task${checked ? " checked" : ""}> `; },
       code({ text, lang }) {
         const l = (lang || "").trim().toLowerCase();
@@ -50,13 +59,13 @@ export function renderMarkdown(src: string, notes: Note[] = []): string {
   ctxNotes = notes;
   if (!hooked) {
     DOMPurify.addHook("afterSanitizeAttributes", (n) => {
-      if (n.tagName === "A" && n.hasAttribute("data-wiki")) return;
+      if (n.tagName === "A" && (n.hasAttribute("data-wiki") || n.hasAttribute("data-asset-file"))) return;
       if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); }
     });
     hooked = true;
   }
   const html = marked.parse(src) as string;
-  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true }, ADD_TAGS: ["clipPath"], ADD_ATTR: ["target", "clip-path", "data-sketch-id", "data-src", "data-wiki", "data-task"] });
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true }, ADD_TAGS: ["clipPath"], ADD_ATTR: ["target", "clip-path", "data-sketch-id", "data-src", "data-wiki", "data-task", "data-asset", "data-asset-file"] });
 }
 
 // Flip the n-th task-list checkbox ("- [ ]" / "- [x]") in the source, skipping fenced code blocks.
