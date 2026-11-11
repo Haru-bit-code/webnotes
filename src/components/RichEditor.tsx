@@ -1,0 +1,110 @@
+"use client";
+// Word-style editing: what you see is what you get, no Markdown marks.
+// Content is stored as clean HTML (note.html); note.body keeps its plain text for search and the AI panel.
+import { useEffect, useRef, useState } from "react";
+import { cleanHtml, htmlText } from "@/lib/formats";
+import { assetUrl, putAsset, fmtSize } from "@/lib/assets";
+import { Icon } from "./Icon";
+
+const cmd = (c: string, v?: string) => document.execCommand(c, false, v);
+
+export function RichEditor({ html, onChange, readOnly, toolbarless, children, wrapStyle }: {
+  html: string; onChange: (html: string, text: string) => void; readOnly?: boolean; toolbarless?: boolean; children?: React.ReactNode; wrapStyle?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const last = useRef<string>("");
+  const [state, setState] = useState<Record<string, boolean | string>>({});
+
+  // load content (and again only if it changed from outside, e.g. the AI panel added text)
+  useEffect(() => {
+    const el = ref.current; if (!el || html === last.current) return;
+    el.innerHTML = cleanHtml(html); last.current = html; resolveImages();
+  }, [html]);
+
+  const resolveImages = () => ref.current?.querySelectorAll<HTMLImageElement>("img[data-asset]").forEach((img) => {
+    if (!img.getAttribute("src")) assetUrl(img.dataset.asset!).then((u) => { if (u) img.src = u; else img.alt = "(image not stored in this browser)"; });
+  });
+  const save = () => {
+    const el = ref.current; if (!el) return;
+    const copy = el.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll("img[data-asset]").forEach((i) => i.removeAttribute("src"));
+    const out = cleanHtml(copy.innerHTML); last.current = out;
+    onChange(out, htmlText(out));
+  };
+  const refresh = () => setState({
+    bold: document.queryCommandState("bold"), italic: document.queryCommandState("italic"), underline: document.queryCommandState("underline"),
+    strike: document.queryCommandState("strikeThrough"), ul: document.queryCommandState("insertUnorderedList"), ol: document.queryCommandState("insertOrderedList"),
+    block: (document.queryCommandValue("formatBlock") || "p").toLowerCase(),
+  });
+  const run = (c: string, v?: string) => { ref.current?.focus(); cmd(c, v); save(); refresh(); };
+  const insertHtml = (h: string) => { ref.current?.focus(); cmd("insertHTML", h); resolveImages(); save(); };
+
+  const addFiles = async (files: File[]) => {
+    for (const f of files) {
+      try {
+        const id = await putAsset(f, f.name);
+        insertHtml(f.type.startsWith("image/") ? `<img data-asset="${id}" alt="${f.name.replace(/"/g, "")}">` : `<p>📎 <a href="#" data-asset="${id}">${f.name}</a> · ${fmtSize(f.size)}</p>`);
+      } catch (e) { alert((e as Error).message); }
+    }
+  };
+  const pickImage = () => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.multiple = true; i.onchange = () => addFiles(Array.from(i.files ?? [])); i.click(); };
+  const link = () => { const url = prompt("Link address (https://…)"); if (url) run("createLink", /^\w+:/.test(url) ? url : "https://" + url); };
+  const table = () => insertHtml(`<table><thead><tr><th>Heading</th><th>Heading</th><th>Heading</th></tr></thead><tbody>${"<tr><td><br></td><td><br></td><td><br></td></tr>".repeat(2)}</tbody></table><p><br></p>`);
+  const checklist = () => insertHtml(`<ul data-checked="list"><li data-checked="false">To do</li></ul>`);
+
+  const onKey = (e: React.KeyboardEvent) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); link(); }
+    if (e.key === "Tab") { e.preventDefault(); cmd(e.shiftKey ? "outdent" : "indent"); save(); }
+  };
+  // tick boxes: click the box at the start of a checklist item
+  const onClick = (e: React.MouseEvent) => {
+    const li = (e.target as HTMLElement).closest("li[data-checked]") as HTMLElement | null;
+    if (li && e.clientX - li.getBoundingClientRect().left < 26) { li.dataset.checked = li.dataset.checked === "true" ? "false" : "true"; save(); }
+    const a = (e.target as HTMLElement).closest("a[data-asset]") as HTMLElement | null;
+    if (a) { e.preventDefault(); import("@/lib/assets").then((m) => m.downloadAsset(a.dataset.asset!, a.textContent || "file")); }
+  };
+
+  const B = (name: string, icon: string, label: string, on?: boolean, act?: () => void) =>
+    <button key={name} type="button" className={`btn icon-btn ghost ${on ? "on" : ""}`} title={label} aria-label={label} aria-pressed={on} onMouseDown={(e) => e.preventDefault()} onClick={act ?? (() => run(name))}><Icon name={icon} /></button>;
+
+  return (
+    <div className="rich-wrap">
+      {!toolbarless && !readOnly && (
+        <div className="rich-bar" role="toolbar" aria-label="Formatting">
+          <select className="field w-auto" aria-label="Text style" value={["h1", "h2", "h3", "pre", "blockquote"].includes(String(state.block)) ? String(state.block) : "p"}
+            onChange={(e) => run("formatBlock", e.target.value)}>
+            <option value="p">Normal text</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>
+            <option value="blockquote">Quote</option><option value="pre">Code block</option>
+          </select>
+          <span className="rich-sep" />
+          {B("bold", "bold", "Bold (⌘B)", !!state.bold)}{B("italic", "italic", "Italic (⌘I)", !!state.italic)}{B("underline", "underline", "Underline (⌘U)", !!state.underline)}{B("strikeThrough", "strike", "Strikethrough", !!state.strike)}
+          {B("hilite", "marker", "Highlight", false, () => { ref.current?.focus(); cmd("styleWithCSS", "true"); cmd("hiliteColor", "#fde68a"); cmd("styleWithCSS", "false"); save(); })}
+          <span className="rich-sep" />
+          {B("insertUnorderedList", "ul", "Bulleted list", !!state.ul)}{B("insertOrderedList", "ol", "Numbered list", !!state.ol)}{B("check", "check", "Checklist", false, checklist)}
+          {B("justifyLeft", "alignL", "Align left")}{B("justifyCenter", "alignC", "Align centre")}
+          <span className="rich-sep" />
+          {B("link", "link", "Link (⌘K)", false, link)}{B("table", "table", "Insert table", false, table)}{B("image", "image", "Insert image", false, pickImage)}
+          {B("removeFormat", "clear", "Clear formatting")}
+          <span className="rich-sep" />
+          {B("undo", "undo", "Undo")}{B("redo", "redo", "Redo")}
+        </div>
+      )}
+      <div className="reading rich-scroll">
+        <div className="ink-wrap" style={wrapStyle}>
+          <div ref={ref} className="md rich-doc" contentEditable={!readOnly} suppressContentEditableWarning role="textbox" aria-multiline aria-label="Document"
+            data-placeholder="Start writing…" spellCheck
+            onInput={save} onKeyUp={refresh} onMouseUp={refresh} onKeyDown={onKey} onClick={onClick} onBlur={save}
+            onPaste={(e) => {
+              const fs = Array.from(e.clipboardData.files); if (fs.length) { e.preventDefault(); addFiles(fs); return; }
+              const h = e.clipboardData.getData("text/html");
+              if (h) { e.preventDefault(); insertHtml(cleanHtml(h)); }
+            }}
+            onDrop={(e) => { const fs = Array.from(e.dataTransfer.files); if (fs.length) { e.preventDefault(); e.stopPropagation(); addFiles(fs); } }}
+            onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }} />
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}

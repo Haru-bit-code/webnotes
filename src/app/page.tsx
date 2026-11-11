@@ -11,6 +11,7 @@ import { AISettings, defaultAI, normalizeAI } from "@/lib/ai";
 import { Icon } from "@/components/Icon";
 import { NewPageDialog } from "@/components/NewPage";
 import { ImportDialog } from "@/components/ImportDialog";
+import { FORMATS, appendText, formatLabel, newNoteOf } from "@/lib/formats";
 
 type View = { kind: "all" } | { kind: "scribbles" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
@@ -159,11 +160,14 @@ export default function Home() {
               <button className="btn btn-primary" aria-expanded={showNew} onClick={() => setShowNew((v) => !v)}><Icon name="plus" /> New</button>
               {showNew && (<>
                 <div className="fixed inset-0 z-30" onClick={() => setShowNew(false)} />
-                <div className="menu right-0 w-60">
-                  <button className="menu-item" onClick={() => newNote()}><Icon name="notes" /><span><b>Markdown note</b><small>Text, maths, code, diagrams</small></span></button>
+                <div className="menu new-menu right-0 w-72">
+                  <div className="nav-group">New</div>
+                  {FORMATS.map((f) => (
+                    <button key={f.id} className="menu-item" onClick={() => (f.id === "scribble" ? (setShowNew(false), setPickPaper(true)) : newNote(newNoteOf(f.id)))}>
+                      <Icon name={f.icon} /><span><b>{f.label}{(settings.newFormat ?? "markdown") === f.id ? <em className="default-tag">default</em> : null}</b><small>{f.hint}</small></span></button>
+                  ))}
                   <button className="menu-item" onClick={() => { setShowNew(false); pickFiles(); }}><Icon name="upload" /><span><b>Import file…</b><small>PDF, image, Word, PowerPoint, Excel, CSV, text…</small></span></button>
-                  <button className="menu-item" onClick={() => { setShowNew(false); setPickPaper(true); }}><Icon name="scribble" /><span><b>Scribble page</b><small>Handwriting, doodles, tables and charts</small></span></button>
-                  <div className="nav-group">Templates</div>
+                  <div className="nav-group">Markdown templates</div>
                   {Object.entries(TEMPLATES).map(([k, t]) => (
                     <button key={k} className="menu-item compact" onClick={() => newNote({ title: t.title, body: t.body })}>{k}</button>
                   ))}
@@ -194,6 +198,7 @@ export default function Home() {
               <div className="note-card-body">{n.kind === "canvas" ? (n.drawing?.length ? `Scribble page · ${n.drawing.length} strokes and shapes` : "Empty scribble page") : n.body.replace(/!?\[([^\]]*)\]\((?:asset:)?[^)]*\)/g, "$1").replace(/^\s*\|?[\s:|-]+\|[\s:|-]*$/gm, "").replace(/[#*`>|\[\]$]|(^|\s)-(?=\s)/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "Empty note"}</div>
               <div className="note-card-meta">
                 <span>{n.deletedAt ? `Deleted ${ago(n.deletedAt)}` : ago(n.updatedAt)}</span>
+                {(n.kind === "canvas" || (n.format && n.format !== "markdown")) && <span className="pill">{formatLabel(n)}</span>}
                 {n.folder && <span className="pill"><Icon name="folder" />{n.folder}</span>}
                 {n.tags.slice(0, 3).map((t) => <span key={t} className="pill">#{t}</span>)}
               </div>
@@ -224,7 +229,7 @@ export default function Home() {
             <div className="empty-sheet">
               <p className="empty-title">Pick a note, or start a new page.</p>
               <div className="flex flex-wrap justify-center gap-2">
-                <button className="btn btn-primary" onClick={() => newNote()}><Icon name="notes" /> New note</button>
+                <button className="btn btn-primary" onClick={() => newNote(newNoteOf(settings.newFormat ?? "markdown"))}><Icon name="notes" /> New {FORMATS.find((f) => f.id === (settings.newFormat ?? "markdown"))!.label.toLowerCase()}</button>
                 <button className="btn" onClick={() => setPickPaper(true)}><Icon name="scribble" /> New scribble page</button>
                 <button className="btn" onClick={pickFiles}><Icon name="upload" /> Import file</button>
               </div>
@@ -241,7 +246,7 @@ export default function Home() {
       {showAI && (
         <aside className="fixed inset-0 z-40 md:static md:inset-auto md:z-auto md:w-96 md:shrink-0">
           <AIPanel ai={ai} setAI={setAI} notes={live} note={current} onClose={() => setShowAI(false)}
-            onInsert={(text) => current && update(current.id, { body: (() => { const b = current.body.replace(/\s*$/, ""); const task = /^- \[[ x]\] /.test(text) && /(^|\n)- \[[ x]\] [^\n]*$/.test(b); return b + (task ? "\n" : "\n\n") + text + "\n"; })() })} />
+            onInsert={(text) => current && current.kind === "doc" && update(current.id, appendText(current, text))} />
         </aside>
       )}
       {!showAI && !current && <button className="btn fab" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}><Icon name="sparkle" /> AI</button>}

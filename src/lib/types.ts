@@ -32,9 +32,16 @@ export type El = {
 
 export type Paper = "blank" | "dots" | "grid" | "graph" | "ruled-narrow" | "ruled" | "ruled-wide" | "handwriting" | "cornell" | "isometric" | "music" | "sheet";
 
+export type NoteFormat = "markdown" | "rich" | "text" | "code" | "sheet";
+export type Sheet = { name: string; rows: string[][] };
+
 export type Note = {
   id: string;
   kind: "doc" | "canvas";
+  format?: NoteFormat;                             // text notes only; missing = markdown (older notes)
+  html?: string;                                   // rich text content (body then holds its plain text)
+  lang?: string;                                   // code notes: language
+  sheets?: Sheet[];                                // spreadsheet notes (body then holds the values as text)
   title: string;
   body: string;
   drawing?: El[];
@@ -53,6 +60,7 @@ export type Settings = {
   theme: "light" | "dark" | "system";
   accent: string;
   font: "sans" | "serif" | "mono" | "hand";
+  newFormat?: NoteFormat;
   fontSize: number;
 };
 

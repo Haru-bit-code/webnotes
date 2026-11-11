@@ -6,7 +6,7 @@ import { Mode, importFile, kindOf } from "@/lib/importers";
 import { fmtSize } from "@/lib/assets";
 import { Icon } from "./Icon";
 
-const MODE_LABEL: Record<Mode, string> = { page: "Page to write and draw on", text: "Editable text note" };
+const MODE_LABEL: Record<Mode, string> = { page: "Page to write and draw on", rich: "Document (like Word)", markdown: "Markdown note", text: "Plain text", code: "Code", sheet: "Spreadsheet" };
 
 export function ImportDialog({ files, onDone, onClose }: { files: File[]; onDone: (notes: Partial<Note>[]) => void; onClose: () => void }) {
   const [modes, setModes] = useState<Mode[]>(() => files.map((f) => kindOf(f).modes[0]));
@@ -44,7 +44,7 @@ export function ImportDialog({ files, onDone, onClose }: { files: File[]; onDone
           ); })}
           {busy && <p className="text-sm" role="status">{busy}</p>}
           {errors.length > 0 && <div className="notice-inline" role="alert">{errors.map((e) => <div key={e}>{e}</div>)}</div>}
-          <p className="muted text-xs leading-relaxed">PDFs and images become pages you can write, draw and highlight on, and export back to PDF. Word, PowerPoint, Excel, CSV, Markdown, text, HTML and code become notes you can edit and download as Word, Markdown or HTML. Other files are attached to a note.</p>
+          <p className="muted text-xs leading-relaxed">Each file opens as its own kind of note: Word and web pages as documents, Excel and CSV as spreadsheets, code as code, text as plain text, PDFs and images as pages to write on. Pick another type from the list if you prefer. Other files are attached to a note.</p>
         </div>
         <div className="modal-foot gap-2">
           <button className="btn" disabled={!!busy} onClick={onClose}>{errors.length ? "Close" : "Cancel"}</button>

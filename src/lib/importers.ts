@@ -4,11 +4,11 @@
 //  • PDF (text mode), Word, PowerPoint, Excel/CSV, Markdown, text, HTML, code → an editable note
 //  • anything else → a note with the file attached for download
 // Heavy libraries are loaded only when a file of that kind is imported.
-import { El, Note } from "./types";
+import { El, Note, NoteFormat, Sheet } from "./types";
 import { putAsset, fmtSize } from "./assets";
 import { svgToEls } from "./svgImport";
 
-export type Mode = "page" | "text";
+export type Mode = "page" | NoteFormat;
 export type Progress = (msg: string) => void;
 const uid = () => Math.random().toString(36).slice(2, 10);
 const ext = (f: File) => (f.name.match(/\.([^.]+)$/)?.[1] ?? "").toLowerCase();
@@ -18,39 +18,54 @@ const IMG = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif"];
 const CODE: Record<string, string> = { js: "javascript", mjs: "javascript", ts: "typescript", tsx: "tsx", jsx: "jsx", py: "python", java: "java", c: "c", h: "c", cpp: "cpp", cc: "cpp", cs: "csharp", go: "go", rs: "rust", rb: "ruby", php: "php", sh: "bash", bash: "bash", sql: "sql", css: "css", scss: "scss", xml: "xml", yaml: "yaml", yml: "yaml", toml: "toml", ini: "ini", kt: "kotlin", swift: "swift", r: "r", m: "matlab", lua: "lua", dart: "dart", ipynb: "json", json: "json" };
 const SHEET = ["xlsx", "xls", "xlsm", "ods", "csv", "tsv"];
 
-/** What a file can become, for the import dialog */
+/** What a file can become, for the import dialog; the first choice is its natural type */
 export function kindOf(f: File): { label: string; modes: Mode[] } {
   const e = ext(f);
-  if (e === "pdf" || f.type === "application/pdf") return { label: "PDF", modes: ["page", "text"] };
+  if (e === "pdf" || f.type === "application/pdf") return { label: "PDF", modes: ["page", "rich", "markdown"] };
   if (IMG.includes(e) || /^image\/(png|jpe?g|gif|webp|bmp|avif)$/.test(f.type)) return { label: "Image", modes: ["page"] };
   if (e === "svg") return { label: "SVG drawing", modes: ["page"] };
-  if (e === "docx") return { label: "Word document", modes: ["text"] };
-  if (e === "pptx") return { label: "PowerPoint", modes: ["text"] };
-  if (SHEET.includes(e)) return { label: e === "csv" || e === "tsv" ? "CSV table" : "Spreadsheet", modes: ["text"] };
-  if (["md", "markdown", "mdx"].includes(e)) return { label: "Markdown", modes: ["text"] };
-  if (["txt", "text", "log"].includes(e) || f.type === "text/plain") return { label: "Text", modes: ["text"] };
-  if (["html", "htm"].includes(e)) return { label: "Web page", modes: ["text"] };
-  if (CODE[e]) return { label: "Code", modes: ["text"] };
-  return { label: "Attachment", modes: ["text"] };
+  if (e === "docx") return { label: "Word document", modes: ["rich", "markdown"] };
+  if (e === "pptx") return { label: "PowerPoint", modes: ["rich", "markdown"] };
+  if (SHEET.includes(e)) return { label: e === "csv" || e === "tsv" ? "CSV table" : "Spreadsheet", modes: ["sheet", "markdown"] };
+  if (["md", "markdown", "mdx"].includes(e)) return { label: "Markdown", modes: ["markdown", "rich"] };
+  if (["txt", "text", "log"].includes(e) || f.type === "text/plain") return { label: "Text", modes: ["text", "markdown"] };
+  if (["html", "htm"].includes(e)) return { label: "Web page", modes: ["rich", "markdown"] };
+  if (CODE[e]) return { label: "Code", modes: ["code", "text"] };
+  return { label: "Attachment", modes: ["markdown"] };
 }
+
+const toRich = async (md: string) => { const [{ renderMarkdown }, { cleanHtml }] = await Promise.all([import("./markdown"), import("./formats")]); return cleanHtml(renderMarkdown(md)); };
+const richNote = async (title: string, html: string): Promise<Partial<Note>> => { const { htmlText, cleanHtml } = await import("./formats"); const h = cleanHtml(html); return { kind: "doc", format: "rich", title, html: h, body: htmlText(h) }; };
 
 export async function importFile(f: File, mode: Mode, progress: Progress = () => {}): Promise<Partial<Note>> {
   const e = ext(f), k = kindOf(f), title = base(f);
-  if (k.label === "PDF") return mode === "page" ? pdfToPage(f, title, progress) : { kind: "doc", title, body: await pdfText(f, progress) };
+  const asMd = (body: string): Partial<Note> => ({ kind: "doc", format: "markdown", title, body });
+  if (k.label === "PDF") {
+    if (mode === "page") return pdfToPage(f, title, progress);
+    const md = await pdfText(f, progress); return mode === "rich" ? richNote(title, await toRich(md)) : asMd(md);
+  }
   if (k.label === "Image") return { kind: "canvas", title, paper: "blank", drawing: [await imageEl(f, 0, 0, 1200, true)] };
   if (k.label === "SVG drawing") return { kind: "canvas", title, paper: "blank", drawing: svgToEls(await f.text(), { lock: true }) };
-  if (k.label === "Word document") return { kind: "doc", title, body: await docxToMd(f, progress) };
-  if (k.label === "PowerPoint") return { kind: "doc", title, body: await pptxToMd(f) };
-  if (SHEET.includes(e)) return { kind: "doc", title, body: await sheetToMd(f) };
-  if (k.label === "Markdown" || k.label === "Text") return { kind: "doc", title, body: (await f.text()).replace(/\r\n?/g, "\n") };
-  if (k.label === "Web page") return { kind: "doc", title, body: await htmlToMd(await f.text()) };
+  if (k.label === "Word document") {
+    const html = await docxToHtml(f, progress);
+    return mode === "rich" ? richNote(title, html) : asMd(await htmlToMd(html));
+  }
+  if (k.label === "PowerPoint") { const md = await pptxToMd(f); return mode === "rich" ? richNote(title, await toRich(md)) : asMd(md); }
+  if (SHEET.includes(e)) {
+    const sheets = await readSheets(f);
+    const { sheetsToMd } = await import("./formats"); const { sheetsText } = await import("./sheet");
+    return mode === "sheet" ? { kind: "doc", format: "sheet", title, sheets, body: sheetsText(sheets) } : asMd(sheetsToMd(sheets));
+  }
+  if (k.label === "Markdown") { const md = (await f.text()).replace(/\r\n?/g, "\n"); return mode === "rich" ? richNote(title, await toRich(md)) : asMd(md); }
+  if (k.label === "Text") { const t = (await f.text()).replace(/\r\n?/g, "\n"); return mode === "text" ? { kind: "doc", format: "text", title, body: t } : asMd(t); }
+  if (k.label === "Web page") { const html = await f.text(); return mode === "rich" ? richNote(title, html) : asMd(await htmlToMd(html)); }
   if (CODE[e]) {
-    let text = await f.text();
+    let text = (await f.text()).replace(/\r\n?/g, "\n");
     if (e === "json" || e === "ipynb") { try { text = JSON.stringify(JSON.parse(text), null, 2); } catch { /* keep as is */ } }
-    return { kind: "doc", title: f.name, body: "```" + CODE[e] + "\n" + text.replace(/\r\n?/g, "\n") + "\n```\n" };
+    return mode === "code" ? { kind: "doc", format: "code", lang: CODE[e], title: f.name, body: text } : { kind: "doc", format: "text", title: f.name, body: text };
   }
   const id = await putAsset(f, f.name);
-  return { kind: "doc", title, body: `📎 [${f.name}](asset:${id}) · ${fmtSize(f.size)}\n\nThis file type can't be opened inside WebNotes, so it is attached: click it to download. Write your notes about it below.\n\n` };
+  return asMd(`📎 [${f.name}](asset:${id}) · ${fmtSize(f.size)}\n\nThis file type can't be opened inside WebNotes, so it is attached: click it to download. Write your notes about it below.\n\n`);
 }
 
 /* ---------------- images ---------------- */
@@ -135,10 +150,12 @@ export async function htmlToMd(html: string) {
     first.querySelectorAll("td").forEach((td) => { const th = doc.createElement("th"); th.innerHTML = td.textContent?.trim() ?? ""; td.replaceWith(th); });
     const thead = doc.createElement("thead"); thead.appendChild(first); t.insertBefore(thead, t.firstChild);
   });
+  doc.querySelectorAll("img[data-asset]").forEach((img) => img.setAttribute("src", "asset:" + img.getAttribute("data-asset")));
+  doc.querySelectorAll("a[data-asset]").forEach((a) => a.setAttribute("href", "asset:" + a.getAttribute("data-asset")));
   doc.querySelectorAll("td p, th p").forEach((p) => { p.replaceWith(doc.createTextNode((p.textContent ?? "") + " ")); });
   return td.turndown(doc.body.innerHTML).replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }
-async function docxToMd(f: File, progress: Progress) {
+async function docxToHtml(f: File, progress: Progress) {
   progress("Reading the document…");
   const mod = await import("mammoth/mammoth.browser"); const mammoth = (mod as { default?: typeof mod.default }).default ?? (mod as unknown as typeof mod.default);
   type Img = { contentType: string; read: (enc?: string) => Promise<ArrayBuffer> };
@@ -150,7 +167,7 @@ async function docxToMd(f: File, progress: Progress) {
     }),
   });
   void messages;
-  return htmlToMd(html);
+  return html.replace(/src="asset:([^"]+)"/g, 'data-asset="$1"');
 }
 
 /* ---------------- PowerPoint ---------------- */
@@ -174,19 +191,21 @@ async function pptxToMd(f: File) {
 }
 
 /* ---------------- spreadsheets ---------------- */
-async function sheetToMd(f: File) {
+async function readSheets(f: File): Promise<Sheet[]> {
   const XLSX = await import("xlsx");
   const isText = /\.(csv|tsv)$/i.test(f.name);
-  const wb = isText ? XLSX.read(await f.text(), { type: "string", FS: /\.tsv$/i.test(f.name) ? "\t" : undefined }) : XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: "array" });
-  const cell = (v: unknown) => String(v ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
-  const parts = wb.SheetNames.map((name) => {
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, blankrows: false, defval: "" });
-    if (!rows.length) return `## ${name}\n\n_Empty sheet._`;
-    const width = Math.min(30, Math.max(...rows.map((r) => r.length)));
-    const shown = rows.slice(0, 1000).map((r) => Array.from({ length: width }, (_, i) => cell(r[i])));
-    const [head, ...body] = shown;
-    const md = [`| ${head.map((h, i) => h || `Column ${i + 1}`).join(" | ")} |`, `| ${head.map(() => "---").join(" | ")} |`, ...body.map((r) => `| ${r.join(" | ")} |`)].join("\n");
-    return (wb.SheetNames.length > 1 || !isText ? `## ${name}\n\n` : "") + md + (rows.length > 1000 ? `\n\n_Showing the first 1000 of ${rows.length} rows._` : "");
+  const wb = isText ? XLSX.read(await f.text(), { type: "string", FS: /\.tsv$/i.test(f.name) ? "\t" : undefined }) : XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: "array", cellFormula: true, sheetStubs: true });
+  return wb.SheetNames.map((name) => {
+    const ws = wb.Sheets[name], ref = ws["!ref"];
+    if (!ref) return { name, rows: Array.from({ length: 20 }, () => Array(8).fill("")) };
+    const r = XLSX.utils.decode_range(ref);
+    const h = Math.min(r.e.r + 1, 2000), w = Math.min(r.e.c + 1, 60);
+    const rows = Array.from({ length: Math.max(h + 5, 20) }, (_, ri) => Array.from({ length: Math.max(w, 8) }, (_, ci) => {
+      const c = ws[XLSX.utils.encode_cell({ r: ri, c: ci })];
+      if (!c) return "";
+      if (c.f) return "=" + c.f;
+      return c.w ?? (c.v === undefined ? "" : String(c.v));
+    }));
+    return { name, rows };
   });
-  return parts.join("\n\n") + "\n";
 }

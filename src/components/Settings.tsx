@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Note, Settings } from "@/lib/types";
 import { useBackup } from "@/lib/backup";
 import { Icon } from "./Icon";
+import { FORMATS } from "@/lib/formats";
 
 type Tab = "appearance" | "backup";
 const ACCENTS = ["#2b59c3", "#0f7b6c", "#7a4fd6", "#c2410c", "#be185d", "#4d7c0f"];
@@ -50,6 +51,8 @@ export function SettingsPanel({ settings, onChange, notes, onImport, backup, onC
                 <label className="swatch swatch-custom" title="Custom colour"><input type="color" value={settings.accent} onChange={(e) => onChange({ ...settings, accent: e.target.value })} /></label>
               </div>
             </Row>
+            <Row label="New notes are"><select className="field w-auto" aria-label="Type for new notes" value={settings.newFormat ?? "markdown"} onChange={(e) => onChange({ ...settings, newFormat: e.target.value as Settings["newFormat"] })}>
+              {FORMATS.filter((f) => f.id !== "scribble").map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select></Row>
             <Row label="Note font"><Seg value={settings.font} options={[["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"], ["hand", "Hand"]]} onChange={(v) => onChange({ ...settings, font: v as Settings["font"] })} /></Row>
             <Row label={`Text size · ${settings.fontSize}px`}>
               <input type="range" className="range" min={13} max={22} value={settings.fontSize} onChange={(e) => onChange({ ...settings, fontSize: +e.target.value })} />
