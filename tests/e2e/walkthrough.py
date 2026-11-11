@@ -94,8 +94,13 @@ async def main():
       names=await pg.locator(".stamp-grid .stamp span").all_inner_texts()
       for nm in names:
         before=len(await els(pg))
-        await pg.locator(f".stamp-grid .stamp:has(span:text-is('{nm}'))").first.click(); await pg.wait_for_timeout(80)
-        after=len(await els(pg)); total+=1
+        await pg.locator(f".stamp-grid .stamp:has(span:text-is('{nm}'))").first.click()
+        # stickers and visuals are downloaded on first use: wait until the item lands (up to 5 s) instead of a fixed pause
+        for _ in range(50):
+          after=len(await els(pg))
+          if after>before: break
+          await pg.wait_for_timeout(100)
+        total+=1
         if after<=before: bad.append(f"{c}/{nm}")
     ok(f"all {total} templates insert", not bad, ",".join(bad))
     await pg.click("[aria-label='Close templates']")
