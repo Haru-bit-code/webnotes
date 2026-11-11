@@ -29,7 +29,7 @@ async def main():
     # asking a question sends only the open note
     await pg.click("button:has-text('Chat')"); await pg.wait_for_timeout(200)
     ok("chat shows what will be sent", "only" in await pg.locator(".ai-scope").inner_text(), await pg.locator(".ai-scope").inner_text())
-    await pg.fill("textarea[placeholder^='Ask']", "Summarise"); await pg.click("button:has-text('Send')"); await pg.wait_for_timeout(1500)
+    await pg.fill("textarea[placeholder^='Ask']", "Summarise"); await pg.click("button:text-is('Send')"); await pg.wait_for_timeout(1500)
     ok("a question sends the open note", sent and "wave physics" in sent[-1])
     ok("…but not other notes", sent and "SECRET-DIARY-TEXT" not in sent[-1])
     # opting in works and is remembered
@@ -40,7 +40,7 @@ async def main():
     ok("choice is remembered after reload", await pg.locator(".ai-opt input").nth(1).is_checked())
     await pg.click("button:has-text('Chat')"); n0=len(sent)
     ok("chat says other notes are included", "other notes" in await pg.locator(".ai-scope").inner_text())
-    await pg.fill("textarea[placeholder^='Ask']", "Connect"); await pg.click("button:has-text('Send')"); await pg.wait_for_timeout(1500)
+    await pg.fill("textarea[placeholder^='Ask']", "Connect"); await pg.click("button:text-is('Send')"); await pg.wait_for_timeout(1500)
     ok("after opting in, other notes are sent", len(sent)>n0 and "SECRET-DIARY-TEXT" in sent[-1])
     await b.close()
 asyncio.run(main())

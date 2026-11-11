@@ -43,6 +43,7 @@ jobs:
         run: |
           pip install playwright==1.63.0 python-docx openpyxl pypdf
           python -m playwright install --with-deps chromium
+          sudo apt-get install -y ffmpeg   # the Send & receive test feeds QR codes to a simulated camera
       - name: Browser tests
         run: python tests/e2e/run.py
       - name: Keep screenshots if something failed

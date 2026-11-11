@@ -18,8 +18,8 @@ import { saveFile } from "@/lib/save";
 
 type Mode = "edit" | "split" | "preview";
 
-export function Editor({ note, folders, notes, leading, extra, onChange, onDelete, onRestore, onPurge, onWikiLink, onOpenNote, onNewSketch }: {
-  note: Note; folders: string[]; notes: Note[]; leading?: React.ReactNode; extra?: React.ReactNode;
+export function Editor({ note, folders, notes, leading, extra, onChange, onDelete, onRestore, onPurge, onWikiLink, onOpenNote, onNewSketch, onSend }: {
+  note: Note; folders: string[]; notes: Note[]; leading?: React.ReactNode; extra?: React.ReactNode; onSend?: () => void;
   onOpenNote: (id: string) => void; onNewSketch: () => string;
   onChange: (patch: Partial<Note>) => void; onDelete: () => void; onRestore: () => void; onPurge: () => void; onWikiLink: (title: string) => void;
 }) {
@@ -153,9 +153,11 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
             <div className="fixed inset-0 z-30" onClick={() => setShowExport(false)} />
             <div className="menu right-0 w-56">
               {exportsFor.map(([k, label, hint]) => <button key={k} className="menu-item" onClick={() => doExport(k)}><Icon name="download" /><span><b>{label}</b><small>{hint}</small></span></button>)}
+              {onSend && <button className="menu-item" onClick={() => { setShowExport(false); onSend(); }}><Icon name="qr" /><span><b>Send to another device</b><small>QR code or a short code, encrypted</small></span></button>}
             </div>
           </>}
         </span>}
+        {note.kind === "canvas" && onSend && !note.deletedAt && <button className="btn icon-btn ghost hidden md:inline-flex" title="Send to another device" aria-label="Send to another device" onClick={onSend}><Icon name="qr" /></button>}
         <button className={`btn icon-btn ghost hidden md:inline-flex ${note.pinned ? "accent-text" : ""}`} title={note.pinned ? "Unpin" : "Pin to top"} aria-pressed={note.pinned} onClick={() => onChange({ pinned: !note.pinned })}><Icon name="pin" /></button>
         <button className="btn icon-btn ghost hidden md:inline-flex" title={note.archived ? "Unarchive" : "Archive"} aria-label={note.archived ? "Unarchive" : "Archive"} onClick={() => onChange({ archived: !note.archived })}><Icon name="archive" /></button>
         {note.deletedAt
@@ -169,6 +171,7 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
             <div className="menu right-0 w-56" role="menu">
               <button role="menuitem" className="menu-item compact" onClick={() => { onChange({ pinned: !note.pinned }); setShowMore(false); }}><Icon name="pin" /><span>{note.pinned ? "Unpin" : "Pin to top"}</span></button>
               <button role="menuitem" className="menu-item compact" onClick={() => { onChange({ archived: !note.archived }); setShowMore(false); }}><Icon name="archive" /><span>{note.archived ? "Unarchive" : "Archive"}</span></button>
+              {onSend && <button role="menuitem" className="menu-item compact" onClick={() => { setShowMore(false); onSend(); }}><Icon name="qr" /><span>Send to another device</span></button>}
               <button role="menuitem" className="menu-item compact" onClick={() => { setShowMore(false); onDelete(); }}><Icon name="trash" /><span>Move to trash</span></button>
             </div>
           </>}

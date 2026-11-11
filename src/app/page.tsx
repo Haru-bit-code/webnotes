@@ -14,6 +14,8 @@ import { ImportDialog } from "@/components/ImportDialog";
 import { FORMATS, appendText, formatLabel, newNoteOf } from "@/lib/formats";
 import { setAllowRemote } from "@/lib/remote";
 import { DEFAULT_THEME, textOn } from "@/lib/themes";
+import { TransferDialog } from "@/components/TransferDialog";
+import { codeFromText } from "@/lib/transfer";
 
 type View = { kind: "all" } | { kind: "scribbles" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
@@ -33,6 +35,17 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [showNav, setShowNav] = useState(false); // phones: the sidebar as a slide-in drawer
+  const [transfer, setTransfer] = useState<null | { mode: "send" | "receive"; noteIds?: string[]; code?: string }>(null);
+  // a scanned QR code opens the website at #receive=CODE: go straight to receiving (nothing is added without asking)
+  useEffect(() => {
+    const check = () => {
+      const c = codeFromText(location.hash);
+      if (c && /receive=/.test(location.hash)) { setTransfer({ mode: "receive", code: c }); history.replaceState(null, "", location.pathname + location.search); }
+    };
+    check(); // opened from the link
+    window.addEventListener("hashchange", check); // or the link was opened while WebNotes was already open in this tab
+    return () => window.removeEventListener("hashchange", check);
+  }, []);
   const [showSettings, setShowSettings] = useState(false);
   const [hideSide, setHideSide] = useState(false);
   const [hideList, setHideList] = useState(false);
@@ -73,7 +86,28 @@ export default function Home() {
     return () => mq.removeEventListener("change", apply);
   }, [settings]);
 
-  const folders = useMemo(() => [...new Set(live.filter((n) => !n.archived && n.folder).map((n) => n.folder))].sort(), [live]);
+  // folders = the ones made with "New folder" plus any a note names; a folder exists even while it is empty
+  const folders = useMemo(() => [...new Set([...(settings.folders ?? []), ...live.filter((n) => !n.archived && n.folder).map((n) => n.folder)])].sort((a, b) => a.localeCompare(b)), [live, settings.folders]);
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({}); // folders expanded in the sidebar
+  const [naming, setNaming] = useState<null | { old?: string }>(null);        // the "New folder" / rename box
+  const [folderMenu, setFolderMenu] = useState<string | null>(null);
+  const [dropFolder, setDropFolder] = useState<string | null>(null);         // folder a dragged note is over
+  const saveFolder = (name: string) => {
+    const nm = name.trim().replace(/\s+/g, " ").slice(0, 60); const old = naming?.old; setNaming(null);
+    if (!nm || nm === old) return;
+    const list = new Set(settings.folders ?? []); if (old) list.delete(old); list.add(nm);
+    setSettings({ ...settings, folders: [...list] });
+    if (old) { for (const n of notes) if (n.folder === old) update(n.id, { folder: nm }); }
+    setView({ kind: "folder", name: nm }); setSelected(null);
+  };
+  const deleteFolder = (name: string) => {
+    const inside = notes.filter((n) => n.folder === name);
+    if (!confirm(inside.length ? `Delete the folder "${name}"? Its ${inside.length} note(s) are kept and move out of the folder.` : `Delete the empty folder "${name}"?`)) return;
+    for (const n of inside) update(n.id, { folder: "" });
+    setSettings({ ...settings, folders: (settings.folders ?? []).filter((f) => f !== name) });
+    if (view.kind === "folder" && view.name === name) setView({ kind: "all" });
+  };
+  const moveToFolder = (id: string, name: string) => update(id, { folder: name });
   const tags = useMemo(() => [...new Set(live.filter((n) => !n.archived).flatMap((n) => n.tags))].sort(), [live]);
 
   const visible = useMemo(() => {
@@ -110,6 +144,7 @@ export default function Home() {
   const onBack = useRef<() => boolean>(() => false);
   onBack.current = () => {
     if (showNav) { setShowNav(false); return true; }
+    if (transfer) { setTransfer(null); return true; }
     if (importing) { setImporting(null); return true; }
     if (pickPaper) { setPickPaper(false); return true; }
     if (showSettings) { setShowSettings(false); return true; }
@@ -136,7 +171,8 @@ export default function Home() {
   const imported = (list: Partial<Note>[]) => {
     let first = "";
     for (const n of [...list].reverse()) first = create({ folder: view.kind === "folder" ? view.name : "", ...n });
-    setView({ kind: "all" }); setSelected(first);
+    if (view.kind !== "folder") setView({ kind: "all" }); // imported into a folder: stay in it
+    setSelected(first);
   };
   const newScribble = (p: Pick<Note, "paper" | "drawing" | "title">) => { setPickPaper(false); newNote({ kind: "canvas", ...p }); };
   const newNote = (init: Partial<Note> = {}) => {
@@ -173,11 +209,50 @@ export default function Home() {
           {navItem({ kind: "scribbles" }, "Scribbles", "scribble", live.filter((n) => !n.archived && (n.kind === "canvas" || !!n.ink?.length)).length)}
           {navItem({ kind: "archive" }, "Archive", "archive", live.filter((n) => n.archived).length)}
           {navItem({ kind: "trash" }, "Trash", "trash", notes.length - live.length)}
-          {folders.length > 0 && <div className="nav-group">Folders</div>}
-          {folders.map((f) => navItem({ kind: "folder", name: f }, f, "folder", live.filter((n) => !n.archived && n.folder === f).length))}
+          <div className="nav-group flex items-center">Folders
+            <button className="btn icon-btn ghost ml-auto nav-add" aria-label="New folder" title="New folder" onClick={() => setNaming({})}><Icon name="plus" /></button></div>
+          {naming && !naming.old && <FolderNameBox onDone={saveFolder} onCancel={() => setNaming(null)} />}
+          {folders.length === 0 && !naming && <button className="nav-hint" onClick={() => setNaming({})}>Group notes into folders: press +</button>}
+          {folders.map((f) => {
+            const inside = live.filter((n) => !n.archived && n.folder === f), open = !!openFolders[f];
+            if (naming?.old === f) return <FolderNameBox key={f} initial={f} onDone={saveFolder} onCancel={() => setNaming(null)} />;
+            return (
+              <div key={f} className={`folder-row ${dropFolder === f ? "drop" : ""}`}
+                onDragOver={(e) => { if (e.dataTransfer.types.includes("text/x-webnotes-note")) { e.preventDefault(); setDropFolder(f); } }}
+                onDragLeave={() => setDropFolder((d) => (d === f ? null : d))}
+                onDrop={(e) => { const id = e.dataTransfer.getData("text/x-webnotes-note"); setDropFolder(null); if (id) { e.preventDefault(); moveToFolder(id, f); } }}>
+                <div className="flex items-center">
+                  <button className="folder-toggle" aria-label={`${open ? "Hide" : "Show"} notes in ${f}`} aria-expanded={open} onClick={() => setOpenFolders((o) => ({ ...o, [f]: !open }))}><Icon name="chevron" className={open ? "" : "-rotate-90"} /></button>
+                  <div className="min-w-0 flex-1">{navItem({ kind: "folder", name: f }, f, "folder", inside.length)}</div>
+                  <span className="relative">
+                    <button className="btn icon-btn ghost folder-more" aria-label={`Folder options for ${f}`} aria-expanded={folderMenu === f} onClick={() => setFolderMenu(folderMenu === f ? null : f)}><Icon name="more" /></button>
+                    {folderMenu === f && <>
+                      <div className="fixed inset-0 z-30" onClick={() => setFolderMenu(null)} />
+                      <div className="menu right-0 w-44" role="menu">
+                        <button role="menuitem" className="menu-item compact" onClick={() => { setFolderMenu(null); setNaming({ old: f }); }}><Icon name="text" /><span>Rename</span></button>
+                        <button role="menuitem" className="menu-item compact" onClick={() => { setFolderMenu(null); deleteFolder(f); }}><Icon name="trash" /><span>Delete folder</span></button>
+                      </div></>}
+                  </span>
+                </div>
+                {open && (
+                  <ul className="folder-notes">
+                    {inside.length === 0 && <li className="muted">Empty</li>}
+                    {inside.slice(0, 12).map((n) => (
+                      <li key={n.id}><button className={n.id === selected ? "on" : ""} onClick={() => { setView({ kind: "folder", name: f }); setSelected(n.id); setShowNav(false); }}>
+                        <Icon name={n.kind === "canvas" ? "scribble" : "notes"} /><span className="truncate">{n.title || "Untitled"}</span></button></li>
+                    ))}
+                    {inside.length > 12 && <li><button onClick={() => { setView({ kind: "folder", name: f }); setShowNav(false); }}>{inside.length - 12} more…</button></li>}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
           {tags.length > 0 && <div className="nav-group">Tags</div>}
           {tags.map((t) => navItem({ kind: "tag", name: t }, t, "tag", live.filter((n) => !n.archived && n.tags.includes(t)).length))}
         </nav>
+        <div className="side-foot">
+          <button className="nav-item" onClick={() => { setShowNav(false); setTransfer({ mode: "send" }); }} title="Move notes to another device or a friend with a QR code"><Icon name="qr" /><span className="flex-1">Send &amp; receive</span></button>
+        </div>
       </aside>
 
       <section className={`list-pane pane pane-2 w-full shrink-0 flex-col md:w-80 ${current ? "hidden" : "flex"} ${hideList ? "" : "md:flex"}`}>
@@ -224,9 +299,10 @@ export default function Home() {
               <span className="flex-1">Deleted notes are kept {TRASH_DAYS} days.</span>
               {visible.length > 0 && <button className="btn" onClick={() => confirm(`Permanently delete ${visible.length} note(s)?`) && (emptyTrash(), setSelected(null))}>Empty trash</button>}
             </div>)}
-          {visible.length === 0 && <div className="empty-list">{query ? `No notes match “${query}”.` : view.kind === "trash" ? "Trash is empty." : view.kind === "archive" ? "Archived notes appear here." : view.kind === "scribbles" ? "Scribble pages, and notes you have written on, appear here." : "No notes yet. Press New to write one."}</div>}
+          {visible.length === 0 && <div className="empty-list">{query ? `No notes match “${query}”.` : view.kind === "trash" ? "Trash is empty." : view.kind === "archive" ? "Archived notes appear here." : view.kind === "scribbles" ? "Scribble pages, and notes you have written on, appear here." : view.kind === "folder" ? "This folder is empty. Press New to add a note here, or drag notes onto the folder." : "No notes yet. Press New to write one."}</div>}
           {visible.map((n) => (
-            <button key={n.id} onClick={() => setSelected(n.id)} className={`note-card ${n.id === selected ? "on" : ""}`}>
+            <button key={n.id} onClick={() => setSelected(n.id)} className={`note-card ${n.id === selected ? "on" : ""}`}
+              draggable={!n.deletedAt} onDragStart={(e) => { e.dataTransfer.setData("text/x-webnotes-note", n.id); e.dataTransfer.effectAllowed = "move"; }}>
               <div className="flex items-center gap-1.5">
                 {(n.kind === "canvas" || !!n.ink?.length) && <Icon name="scribble" className="muted" />}
                 <span className="note-card-title flex-1 truncate">{n.title || "Untitled"}</span>
@@ -251,6 +327,7 @@ export default function Home() {
               <Editor key={current.id} note={current} folders={folders} notes={live}
                 extra={<button className={`btn ${showAI ? "btn-primary" : ""}`} title="AI assistant (⌘J)" aria-label="AI assistant" onClick={() => setShowAI((v) => !v)}><Icon name="sparkle" /><span className="hidden sm:inline">AI</span></button>}
                 onOpenNote={(id) => { setBack(current.id); setSelected(id); }} onNewSketch={() => { const id = create({ kind: "canvas", drawing: [], title: "Sketch" }); return id; }}
+                onSend={() => setTransfer({ mode: "send", noteIds: [current.id] })}
                 leading={<>
                   <button className="btn icon-btn ghost md:hidden" aria-label="Back to list" onClick={() => setSelected(null)}><Icon name="back" /></button>
                   {toggles}
@@ -299,8 +376,22 @@ export default function Home() {
       {!showAI && !current && <button className="btn fab" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}><Icon name="sparkle" /> AI</button>}
 
       {importing && <ImportDialog files={importing} onDone={imported} onClose={() => setImporting(null)} />}
+      {transfer && <TransferDialog notes={notes} folders={folders} start={transfer} onImport={importNotes} onClose={() => setTransfer(null)}
+        onFolders={(names) => setSettings((s) => ({ ...s, folders: [...new Set([...(s.folders ?? []), ...names])] }))} />}
       {pickPaper && <NewPageDialog onCreate={newScribble} onClose={() => setPickPaper(false)} />}
       {showSettings && <SettingsPanel settings={settings} onChange={setSettings} notes={notes} onImport={importNotes} backup={backup} onClose={() => setShowSettings(false)} />}
     </div>
+  );
+}
+
+/** the little box for typing a folder name (new folder or rename) */
+function FolderNameBox({ initial = "", onDone, onCancel }: { initial?: string; onDone: (name: string) => void; onCancel: () => void }) {
+  const [v, setV] = useState(initial);
+  return (
+    <form className="folder-name" onSubmit={(e) => { e.preventDefault(); onDone(v); }}>
+      <Icon name="folder" />
+      <input autoFocus className="field" aria-label="Folder name" placeholder="Folder name" value={v} maxLength={60}
+        onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} onBlur={() => (v.trim() ? onDone(v) : onCancel())} />
+    </form>
   );
 }

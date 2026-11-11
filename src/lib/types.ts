@@ -60,6 +60,7 @@ export type Settings = {
   theme: "light" | "dark" | "system";
   accent: string;
   glass?: boolean;
+  folders?: string[]; // folders made with "New folder" (they exist even while empty)
   glow?: [string, string]; // the two other colours of the background glow (from a theme preset)
   remoteImages?: boolean; // load pictures from the web without asking (default: ask)   // frosted-glass panels (false = solid)
   font: "sans" | "serif" | "mono" | "hand";
