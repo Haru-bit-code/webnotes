@@ -27,6 +27,13 @@ async def main():
     await B.fill("textarea.source","B typing more"); await B.wait_for_timeout(300)
     N={n["title"]:n for n in await notes(B)}
     ok("typing in one tab no longer erases the other tab's work", N["From tab A"]["body"]=="A changed again" and N["From tab B"]["body"]=="B typing more")
+    # stress: both tabs type into their own notes as fast as possible, no pauses
+    for i in range(30):
+        await A.fill("textarea.source", f"A round {i}"); await B.fill("textarea.source", f"B round {i}")
+    await A.wait_for_timeout(400)
+    for pg_ in (A, B):
+        N={n["title"]:n for n in await notes(pg_)}
+        ok("rapid edits in two tabs: nothing lost (" + ("A" if pg_ is A else "B") + "'s view)", N["From tab A"]["body"]=="A round 29" and N["From tab B"]["body"]=="B round 29", str({k:v['body'] for k,v in N.items() if k.startswith('From')}))
     # both edit the same note at the same time -> conflict copy keeps both
     await open_note(B,"From tab A"); await B.click("[role=radio]:text-is('Edit')")
     await B.evaluate("window.dispatchEvent(new Event('noop'))")

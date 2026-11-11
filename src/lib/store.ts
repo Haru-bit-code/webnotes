@@ -58,6 +58,7 @@ export function useNotes() {
   const base = useRef(new Map<string, number>()); // updatedAt of each note as last read from / written to storage
   const rev = useRef<string | null>(null);         // storage revision this tab last saw
   const [conflicts, setConflicts] = useState(0);
+  const latest = useRef<Note[]>([]); latest.current = notes; // newest notes, read when the save lock is granted
   const remember = (list: Note[]) => { base.current = new Map(list.map((n) => [n.id, n.updatedAt])); };
 
   useEffect(() => {
@@ -69,24 +70,29 @@ export function useNotes() {
     setReady(true);
   }, []);
 
-  // save: if another tab wrote since we last looked, merge with it first
+  // save: if another tab wrote since we last looked, merge with it first. The read-merge-write runs under a
+  // browser-wide lock (Web Locks API) so two tabs can never interleave and drop each other's latest edit.
   useEffect(() => {
     if (!ready) return;
-    let list = notes;
-    const stored = localStorage.getItem(REV_KEY);
-    if (stored !== rev.current) {
-      const r = mergeNotes(notes, load<Note[]>(NOTES_KEY, []), base.current, load<Record<string, number>>(PURGED_KEY, {}));
-      list = r.notes; if (r.conflicts) setConflicts((c) => c + r.conflicts);
-    }
-    try {
-      localStorage.setItem(NOTES_KEY, JSON.stringify(list));
-      rev.current = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      localStorage.setItem(REV_KEY, rev.current);
-      remember(list);
-    } catch (e) {
-      if (!warned) { warned = true; alert("Your latest changes couldn't be saved: this browser's storage is full. Make a full backup (Settings → Backup), then delete large notes or files. (" + (e as Error).message + ")"); }
-    }
-    if (list !== notes) setNotes(list);
+    const save = () => {
+      let list = latest.current;
+      const stored = localStorage.getItem(REV_KEY);
+      if (stored !== rev.current) {
+        const r = mergeNotes(list, load<Note[]>(NOTES_KEY, []), base.current, load<Record<string, number>>(PURGED_KEY, {}));
+        list = r.notes; if (r.conflicts) setConflicts((c) => c + r.conflicts);
+      }
+      try {
+        localStorage.setItem(NOTES_KEY, JSON.stringify(list));
+        rev.current = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        localStorage.setItem(REV_KEY, rev.current);
+        remember(list);
+      } catch (e) {
+        if (!warned) { warned = true; alert("Your latest changes couldn't be saved: this browser's storage is full. Make a full backup (Settings → Backup), then delete large notes or files. (" + (e as Error).message + ")"); }
+      }
+      if (list !== latest.current) { latest.current = list; setNotes(list); }
+    };
+    const locks = typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+    if (locks) locks.request("webnotes-save", save); else save();
   }, [notes, ready]);
 
   // another tab saved: bring its changes in
