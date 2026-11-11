@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { Note } from "@/lib/types";
 import { Preview } from "./Preview";
 import { Canvas } from "./Canvas";
+import { InkLayer } from "./InkLayer";
 import { SNIPPETS } from "@/lib/templates";
 import { backlinksTo, toggleTask } from "@/lib/markdown";
 import { Icon } from "./Icon";
@@ -14,7 +15,11 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
   onOpenNote: (id: string) => void; onNewSketch: () => string;
   onChange: (patch: Partial<Note>) => void; onDelete: () => void; onRestore: () => void; onPurge: () => void; onWikiLink: (title: string) => void;
 }) {
-  const [mode, setMode] = useState<Mode>("split");
+  const [mode, setModeRaw] = useState<Mode>("split");
+  const [scribble, setScribble] = useState(false);
+  const [inkSlot, setInkSlot] = useState<HTMLDivElement | null>(null);
+  const setMode = (m: Mode) => { setModeRaw(m); if (m === "edit") setScribble(false); };
+  const toggleScribble = () => { const on = !scribble; setScribble(on); if (on && mode === "edit") setModeRaw("preview"); };
   const [tagInput, setTagInput] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
 
@@ -51,6 +56,12 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
         {note.kind === "doc" && <div className="seg" role="radiogroup" aria-label="View mode">{(["edit", "split", "preview"] as Mode[]).map((m) => (
           <button key={m} role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m[0].toUpperCase() + m.slice(1)}</button>
         ))}</div>}
+        {note.kind === "doc" && !note.deletedAt && (
+          <button role="switch" aria-checked={scribble} className={`switch-btn ${scribble ? "on" : ""}`} onClick={toggleScribble}
+            title="Scribble: write, circle and highlight on top of this note with a pen or finger">
+            <Icon name="scribble" /><span className="hidden sm:inline">Scribble</span><span className="switch" aria-hidden="true" />
+          </button>
+        )}
         <span className="flex-1" />
         {note.kind === "doc" && <button className="btn icon-btn ghost" title="Download as Markdown" aria-label="Download as Markdown" onClick={exportMd}><Icon name="download" /></button>}
         <button className={`btn icon-btn ghost ${note.pinned ? "accent-text" : ""}`} title={note.pinned ? "Unpin" : "Pin to top"} aria-pressed={note.pinned} onClick={() => onChange({ pinned: !note.pinned })}><Icon name="pin" /></button>
@@ -98,16 +109,23 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
           </select>
         )}
       </div>
+      <div ref={setInkSlot} />
       <div className={`flex min-h-0 flex-1 ${note.deletedAt ? "pointer-events-none opacity-60" : ""}`}>
         {note.kind === "canvas" ? (
-          <Canvas initial={note.drawing ?? []} title={note.title} onChange={(drawing) => onChange({ drawing })} />
+          <Canvas initial={note.drawing ?? []} title={note.title} onChange={(drawing) => onChange({ drawing })} paper={note.paper ?? "dots"} onPaper={(paper) => onChange({ paper })} />
         ) : (<>
           {mode !== "preview" && (
             <textarea ref={ta} className={`source h-full resize-none ${mode === "split" ? "w-1/2 border-r bd" : "w-full"}`}
               placeholder="Write in Markdown… use ＋ Insert for math, flowcharts, charts, plots" value={note.body}
               onKeyDown={onKey} onChange={(e) => onChange({ body: e.target.value })} />
           )}
-          {mode !== "edit" && <Preview body={note.body} notes={notes} onOpenNote={onOpenNote} onWikiLink={onWikiLink} onToggleTask={(i) => onChange({ body: toggleTask(note.body, i) })} className={`reading h-full overflow-y-auto ${mode === "split" ? "w-1/2" : "w-full"}`} />}
+          {mode !== "edit" && (
+            <div className={`reading h-full overflow-y-auto ${mode === "split" ? "w-1/2" : "w-full"} ${scribble ? "scribbling" : ""}`}>
+              <InkLayer ink={note.ink ?? []} active={scribble} toolbarSlot={inkSlot} onChange={(ink) => onChange({ ink })}>
+                <Preview body={note.body} notes={notes} onOpenNote={onOpenNote} onWikiLink={onWikiLink} onToggleTask={(i) => onChange({ body: toggleTask(note.body, i) })} />
+              </InkLayer>
+            </div>
+          )}
         </>)}
       </div>
       {back.length > 0 && (

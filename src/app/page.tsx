@@ -9,8 +9,10 @@ import { useBackup } from "@/lib/backup";
 import { AIPanel } from "@/components/AIPanel";
 import { AISettings, defaultAI, normalizeAI } from "@/lib/ai";
 import { Icon } from "@/components/Icon";
+import { PaperPicker } from "@/components/Paper";
+import { Paper } from "@/lib/types";
 
-type View = { kind: "all" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
+type View = { kind: "all" } | { kind: "scribbles" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
 const FONTS = {
   sans: "\"Hanken Grotesk\", ui-sans-serif, system-ui, sans-serif",
@@ -74,6 +76,7 @@ export default function Home() {
         if (n.archived) return false;
         if (view.kind === "folder") return n.folder === view.name;
         if (view.kind === "tag") return n.tags.includes(view.name);
+        if (view.kind === "scribbles") return n.kind === "canvas" || !!n.ink?.length;
         return true;
       })
       .filter((n) => !q || (n.title + " " + n.body + " " + n.tags.join(" ") + " " + (n.drawing ?? []).map((e) => e.text ?? "").join(" ")).toLowerCase().includes(q))
@@ -90,14 +93,16 @@ export default function Home() {
   );
 
   const [showNew, setShowNew] = useState(false);
+  const [pickPaper, setPickPaper] = useState(false);
+  const newScribble = (paper: Paper) => { setPickPaper(false); newNote({ kind: "canvas", drawing: [], paper, title: "" }); };
   const newNote = (init: Partial<Note> = {}) => {
     setShowNew(false);
     const id = create({ folder: view.kind === "folder" ? view.name : "", tags: view.kind === "tag" ? [view.name] : [], ...init });
-    if (view.kind === "archive" || view.kind === "trash") setView({ kind: "all" });
+    if (view.kind === "archive" || view.kind === "trash" || (view.kind === "scribbles" && init.kind !== "canvas")) setView({ kind: "all" });
     setSelected(id);
   };
 
-  const viewTitle = view.kind === "all" ? "All notes" : view.kind === "archive" ? "Archive" : view.kind === "trash" ? "Trash" : view.kind === "folder" ? view.name : "#" + view.name;
+  const viewTitle = view.kind === "all" ? "All notes" : view.kind === "archive" ? "Archive" : view.kind === "trash" ? "Trash" : view.kind === "scribbles" ? "Scribbles" : view.kind === "folder" ? view.name : "#" + view.name;
   const ago = (t: number) => { const d = (Date.now() - t) / 60000; return d < 1 ? "just now" : d < 60 ? `${Math.floor(d)} min ago` : d < 1440 ? `${Math.floor(d / 60)} h ago` : new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" }); };
   const toggles = <span className="hidden gap-1 md:flex">
     <button className="btn icon-btn ghost" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={() => setHideSide((v) => !v)}><Icon name="sidebar" /></button>
@@ -116,6 +121,7 @@ export default function Home() {
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
           {navItem({ kind: "all" }, "All notes", "notes", live.filter((n) => !n.archived).length)}
+          {navItem({ kind: "scribbles" }, "Scribbles", "scribble", live.filter((n) => !n.archived && (n.kind === "canvas" || !!n.ink?.length)).length)}
           {navItem({ kind: "archive" }, "Archive", "archive", live.filter((n) => n.archived).length)}
           {navItem({ kind: "trash" }, "Trash", "trash", notes.length - live.length)}
           {folders.length > 0 && <div className="nav-group">Folders</div>}
@@ -137,7 +143,7 @@ export default function Home() {
                 <div className="fixed inset-0 z-30" onClick={() => setShowNew(false)} />
                 <div className="menu right-0 w-60">
                   <button className="menu-item" onClick={() => newNote()}><Icon name="notes" /><span><b>Markdown note</b><small>Text, maths, code, diagrams</small></span></button>
-                  <button className="menu-item" onClick={() => newNote({ kind: "canvas", drawing: [] })}><Icon name="pen" /><span><b>Canvas</b><small>Freehand sketch and shapes</small></span></button>
+                  <button className="menu-item" onClick={() => { setShowNew(false); setPickPaper(true); }}><Icon name="scribble" /><span><b>Scribble page</b><small>Handwriting, doodles, tables and charts</small></span></button>
                   <div className="nav-group">Templates</div>
                   {Object.entries(TEMPLATES).map(([k, t]) => (
                     <button key={k} className="menu-item compact" onClick={() => newNote({ title: t.title, body: t.body })}>{k}</button>
@@ -158,15 +164,15 @@ export default function Home() {
               <span className="flex-1">Deleted notes are kept {TRASH_DAYS} days.</span>
               {visible.length > 0 && <button className="btn" onClick={() => confirm(`Permanently delete ${visible.length} note(s)?`) && (emptyTrash(), setSelected(null))}>Empty trash</button>}
             </div>)}
-          {visible.length === 0 && <div className="empty-list">{query ? `No notes match “${query}”.` : view.kind === "trash" ? "Trash is empty." : view.kind === "archive" ? "Archived notes appear here." : "No notes yet. Press New to write one."}</div>}
+          {visible.length === 0 && <div className="empty-list">{query ? `No notes match “${query}”.` : view.kind === "trash" ? "Trash is empty." : view.kind === "archive" ? "Archived notes appear here." : view.kind === "scribbles" ? "Scribble pages, and notes you have written on, appear here." : "No notes yet. Press New to write one."}</div>}
           {visible.map((n) => (
             <button key={n.id} onClick={() => setSelected(n.id)} className={`note-card ${n.id === selected ? "on" : ""}`}>
               <div className="flex items-center gap-1.5">
-                {n.kind === "canvas" && <Icon name="pen" className="muted" />}
+                {(n.kind === "canvas" || !!n.ink?.length) && <Icon name="scribble" className="muted" />}
                 <span className="note-card-title flex-1 truncate">{n.title || "Untitled"}</span>
                 {n.pinned && <Icon name="pin" className="accent-text" />}
               </div>
-              <div className="note-card-body">{n.kind === "canvas" ? `Canvas with ${n.drawing?.length ?? 0} objects` : n.body.replace(/[#*`>\-\[\]$]/g, "").slice(0, 120) || "Empty note"}</div>
+              <div className="note-card-body">{n.kind === "canvas" ? (n.drawing?.length ? `Scribble page · ${n.drawing.length} strokes and shapes` : "Empty scribble page") : n.body.replace(/[#*`>\-\[\]$]/g, "").slice(0, 120) || "Empty note"}</div>
               <div className="note-card-meta">
                 <span>{n.deletedAt ? `Deleted ${ago(n.deletedAt)}` : ago(n.updatedAt)}</span>
                 {n.folder && <span className="pill"><Icon name="folder" />{n.folder}</span>}
@@ -200,7 +206,7 @@ export default function Home() {
               <p className="empty-title">Pick a note, or start a new page.</p>
               <div className="flex flex-wrap justify-center gap-2">
                 <button className="btn btn-primary" onClick={() => newNote()}><Icon name="notes" /> New note</button>
-                <button className="btn" onClick={() => newNote({ kind: "canvas", drawing: [] })}><Icon name="pen" /> New canvas</button>
+                <button className="btn" onClick={() => setPickPaper(true)}><Icon name="scribble" /> New scribble page</button>
               </div>
               <dl className="shortcuts">
                 <div><dt><kbd>⌘</kbd><kbd>J</kbd></dt><dd>AI assistant</dd></div>
@@ -220,6 +226,17 @@ export default function Home() {
       )}
       {!showAI && !current && <button className="btn fab" title="AI assistant (⌘J)" onClick={() => setShowAI(true)}><Icon name="sparkle" /> AI</button>}
 
+      {pickPaper && (
+        <div className="modal-scrim new-paper" onClick={() => setPickPaper(false)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Choose paper" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head"><h2 className="pane-title">New scribble page</h2><button className="btn icon-btn ghost" aria-label="Close" onClick={() => setPickPaper(false)}><Icon name="close" /></button></div>
+            <div className="modal-body">
+              <p className="muted mb-3 text-sm">Pick a paper. You can change it later from the Paper button on the page.</p>
+              <PaperPicker onPick={newScribble} />
+            </div>
+          </div>
+        </div>
+      )}
       {showSettings && <SettingsPanel settings={settings} onChange={setSettings} notes={notes} onImport={importNotes} backup={backup} onClose={() => setShowSettings(false)} />}
     </div>
   );

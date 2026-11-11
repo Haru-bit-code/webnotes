@@ -1,19 +1,23 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { El, ElType, Pt } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { El, ElType, Paper, Pt } from "@/lib/types";
 import { parsePlotShort, plotInner } from "@/lib/charts";
+import { CATEGORIES, Category, STAMPS, placeStamp } from "@/lib/stamps";
+import { PaperLayer, PaperPicker } from "./Paper";
+import { Icon } from "./Icon";
 
 type Tool = "select" | "hand" | "pen" | "hl" | "eraser" | "line" | "arrow" | "rect" | "ellipse" | "diamond" | "triangle" | "cube" | "text" | "axes" | "plot";
 const TOOLS: [Tool, string, string][] = [
-  ["select", "↖", "Select / move (double-click text or plot to edit)"], ["hand", "✋", "Pan (or hold Space)"],
-  ["pen", "✏️", "Pen"], ["hl", "🖍", "Highlighter"], ["eraser", "🧽", "Eraser"],
-  ["line", "╱", "Line"], ["arrow", "→", "Arrow"], ["rect", "▭", "Rectangle"], ["ellipse", "◯", "Ellipse"], ["diamond", "◇", "Diamond (decision)"], ["triangle", "△", "Triangle"], ["cube", "🧊", "Cube (3D box)"],
-  ["text", "T", "Text"], ["axes", "⊹", "Axes (x–y)"], ["plot", "ƒ", "Function plot"],
+  ["select", "cursor", "Select / move (double-click text or plot to edit)"], ["hand", "hand", "Pan (or hold Space)"],
+  ["pen", "pen", "Pen (hold still at the end to snap to a clean shape)"], ["hl", "highlighter", "Highlighter"], ["eraser", "eraser", "Eraser"],
+  ["line", "line", "Line"], ["arrow", "arrowTool", "Arrow"], ["rect", "rect", "Rectangle"], ["ellipse", "ellipse", "Ellipse"], ["diamond", "diamond", "Diamond (decision)"], ["triangle", "triangle", "Triangle"], ["cube", "cube", "Cube (3D box)"],
+  ["text", "text", "Text"], ["axes", "axes", "Axes (x–y)"], ["plot", "plot", "Function plot"],
 ];
 const COLORS = ["auto", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#a855f7", "#ec4899"];
-const GRIDS = ["dots", "grid", "none"] as const;
 const uid = () => Math.random().toString(36).slice(2, 10);
-const stroke = (e: El) => (e.c === "auto" ? "currentColor" : e.c);
+const stroke = (e: El) => (e.c === "auto" ? "currentColor" : e.c === "accent" ? "var(--accent)" : e.c);
+const fillOf = (e: El) => (!e.fill ? "transparent" : e.fill === "accent" ? "var(--accent)" : e.fill);
+const fillOp = (e: El) => (e.fill === "accent" ? 0.14 : 1);
 
 const pathD = (p: Pt[]) => {
   if (p.length === 1) return `M${p[0][0]} ${p[0][1]}l.01 0`;
@@ -86,12 +90,12 @@ export function Shape({ e }: { e: El }) {
         {e.t === "arrow" && <path d={`M${e.x2! - hl * Math.cos(ang - 0.45)} ${e.y2! - hl * Math.sin(ang - 0.45)}L${e.x2} ${e.y2}L${e.x2! - hl * Math.cos(ang + 0.45)} ${e.y2! - hl * Math.sin(ang + 0.45)}`} {...common} />}
         <line x1={e.x} y1={e.y} x2={e.x2} y2={e.y2} stroke="transparent" strokeWidth={14} /></>;
     }
-    case "rect": return <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={3} {...common} fill="transparent" />;
-    case "ellipse": return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} {...common} fill="transparent" />;
-    case "diamond": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h / 2}L${b.x + b.w / 2} ${b.y + b.h}L${b.x} ${b.y + b.h / 2}Z`} {...common} fill="transparent" />;
+    case "rect": return <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={3} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
+    case "ellipse": return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
+    case "diamond": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h / 2}L${b.x + b.w / 2} ${b.y + b.h}L${b.x} ${b.y + b.h / 2}Z`} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
     case "triangle": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h}L${b.x} ${b.y + b.h}Z`} {...common} fill="transparent" />;
     case "text":
-      return <text x={e.x} y={e.y} fontSize={e.fs || 20} fill={s} fontFamily="ui-sans-serif,system-ui,sans-serif" style={{ whiteSpace: "pre" }}>
+      return <text x={e.x} y={e.y} fontSize={e.fs || 20} fill={s} fontFamily="'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif" style={{ whiteSpace: "pre" }}>
         {(e.text || "").split("\n").map((l, i) => <tspan key={i} x={e.x} dy={i ? (e.fs || 20) * 1.3 : 0}>{l}</tspan>)}</text>;
     case "axes": {
       const x0 = b.x + 24, y0 = b.y + b.h - 24, ticks: React.ReactNode[] = [];
@@ -230,7 +234,9 @@ function recogniseAll(pts: Pt[], els: El[], base: { id: string; c: string; w: nu
   return null;
 }
 
-export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: (els: El[]) => void; title: string }) {
+export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { initial: El[]; onChange: (els: El[]) => void; title: string; paper?: Paper; onPaper?: (p: Paper) => void }) {
+  const [panel, setPanel] = useState<null | "templates" | "paper" | "more">(null);
+  const [cat, setCat] = useState<Category>("Tables");
   const [els, setEls] = useState<El[]>(initial);
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState("auto");
@@ -248,7 +254,6 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [snapPrev, setSnapPrev] = useState<Snap | null>(null);
   const stab = useRef<Pt>([0, 0]);
-  const [grid, setGrid] = useState<(typeof GRIDS)[number]>("dots");
   const [textBox, setTextBox] = useState<{ id?: string; x: number; y: number; value: string } | null>(null);
   const past = useRef<El[][]>([]);
   const future = useRef<El[][]>([]);
@@ -261,6 +266,9 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
   const worldRef = useRef<SVGGElement>(null);
 
   drawRef.current = draft;
+  // a template's shapes share a group id: selecting one selects the whole group
+  const selIds = useMemo(() => { const s0 = els.find((x) => x.id === sel); return !s0 ? [] : s0.g ? els.filter((x) => x.g === s0.g).map((x) => x.id) : [s0.id]; }, [els, sel]);
+  const selRef = useRef(selIds); selRef.current = selIds;
   const commit = useCallback((next: El[], prev = elsRef.current) => {
     past.current.push(prev); future.current = [];
     setEls(next); onChange(next);
@@ -300,7 +308,7 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
       else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
-      else if ((e.key === "Delete" || e.key === "Backspace") && sel) { commit(elsRef.current.filter((x) => x.id !== sel)); setSel(null); }
+      else if ((e.key === "Delete" || e.key === "Backspace") && sel) { commit(elsRef.current.filter((x) => !selRef.current.includes(x.id))); setSel(null); }
       else if (e.key === "Escape") setSel(null);
       else if (!mod && /^[1-9]$/.test(e.key)) { const hit = TOOLS[+e.key - 1]; if (hit) setTool(hit[0]); }
     };
@@ -340,7 +348,7 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
     const isFree = t === "pen" || t === "hl";
     if (!isFree && snapGrid) { p[0] = Math.round(p[0] / 24) * 24; p[1] = Math.round(p[1] / 24) * 24; }
     stab.current = p; lastMove.current = Date.now(); anchor.current = [e.clientX, e.clientY]; setSnapPrev(null);
-    setDraft({ id: uid(), t, x: p[0], y: p[1], x2: p[0], y2: p[1], pts: isFree ? [p] : undefined, c: color, w: t === "hl" ? width * 5 : width });
+    setDraft({ id: uid(), t, x: p[0], y: p[1], x2: p[0], y2: p[1], pts: isFree ? [p] : undefined, c: t === "hl" && color === "auto" ? "#facc15" : color, w: t === "hl" ? width * 5 : width });
     drag.current = { mode: "draw", sx: 0, sy: 0, last: p };
   };
 
@@ -370,7 +378,8 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
     if (d.mode === "move" && sel) {
       d.moved = true;
       const dx = p[0] - d.last[0], dy = p[1] - d.last[1]; d.last = p;
-      setEls((cur) => cur.map((x) => (x.id === sel ? moveEl(x, dx, dy) : x)));
+      const ids = selRef.current;
+      setEls((cur) => cur.map((x) => (ids.includes(x.id) ? moveEl(x, dx, dy) : x)));
       return;
     }
     if (d.mode === "draw" && drawRef.current?.pts) {
@@ -464,7 +473,9 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
     const w = Math.max(...all.map((b) => b.x + b.w)) + 24 - x, h = Math.max(...all.map((b) => b.y + b.h)) + 24 - y;
     const cs = getComputedStyle(document.documentElement);
     const fg = cs.getPropertyValue("--text").trim() || "#111", bg = cs.getPropertyValue("--bg").trim() || "#fff";
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${x} ${y} ${w} ${h}" color="${fg}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${bg}"/>${worldRef.current!.innerHTML}</svg>`;
+    const acc = cs.getPropertyValue("--accent").trim() || "#2b59c3", raised = cs.getPropertyValue("--raised").trim() || bg;
+    const inner = worldRef.current!.innerHTML.replaceAll("var(--accent)", acc).replaceAll("var(--raised)", raised);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${x} ${y} ${w} ${h}" color="${fg}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${bg}"/>${inner}</svg>`;
     return { svg, w, h };
   };
   const download = (href: string, name: string) => { const a = document.createElement("a"); a.href = href; a.download = name; a.click(); };
@@ -483,21 +494,38 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
   };
 
   const selEl = els.find((x) => x.id === sel);
-  const sb = selEl ? bbox(selEl) : null;
+  const sb = (() => {
+    const bs = els.filter((x) => selIds.includes(x.id)).map(bbox); if (!bs.length) return null;
+    const x = Math.min(...bs.map((q) => q.x)), y = Math.min(...bs.map((q) => q.y));
+    return { x, y, w: Math.max(...bs.map((q) => q.x + q.w)) - x, h: Math.max(...bs.map((q) => q.y + q.h)) - y };
+  })();
   const cursor = tool === "hand" || space.current ? "grab" : tool === "select" ? "default" : tool === "text" ? "text" : "crosshair";
-  const btn = "btn cbtn";
+  const btn = "btn icon-btn ghost cbtn";
+  const delSel = () => { if (sel) { commit(els.filter((x) => !selIds.includes(x.id))); setSel(null); } };
+
+  // templates: build each once for the thumbnails
+  const built = useMemo(() => STAMPS.map((st) => ({ ...st, els: st.build() })), []);
+  const insertStamp = (i: number) => {
+    const r = svgRef.current!.getBoundingClientRect();
+    const fresh = STAMPS[i].build(), g = uid();
+    const at0 = placeStamp(fresh, 0, 0).map((e) => ({ ...e, id: uid(), g }));
+    const bs = at0.map(bbox), w = Math.max(...bs.map((q) => q.x + q.w)), h = Math.max(...bs.map((q) => q.y + q.h));
+    const cx = (r.width / 2 - view.x) / view.k, cy = (r.height / 2 - view.y) / view.k;
+    // find a free spot: start in the middle of the view, then step down past anything already there
+    const taken = els.map(bbox), hit = (x: number, y: number) => taken.some((q) => x < q.x + q.w + 24 && x + w + 24 > q.x && y < q.y + q.h + 24 && y + h + 24 > q.y);
+    let px = cx - w / 2, py = cy - h / 2;
+    for (let i = 0; i < 200 && hit(px, py); i++) py += 24;
+    const placed = placeStamp(at0, px, py);
+    commit([...els, ...placed]); setSel(placed[0].id); setTool("select");
+    if (py !== cy - h / 2) setView((v) => ({ ...v, y: r.height / 2 - (py + h / 2) * v.k })); // bring it into view
+    if (window.innerWidth < 768) setPanel(null);
+  };
 
   return (
     <div className="relative h-full w-full select-none overflow-hidden">
       <svg ref={svgRef} className="h-full w-full touch-none" style={{ cursor }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDouble}>
-        <defs>
-          <pattern id="dots" width={24 * view.k} height={24 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
-            <circle cx={1} cy={1} r={1.1} fill="currentColor" opacity=".25" /></pattern>
-          <pattern id="grid" width={24 * view.k} height={24 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
-            <path d={`M${24 * view.k} 0H0V${24 * view.k}`} fill="none" stroke="currentColor" opacity=".12" /></pattern>
-        </defs>
-        {grid !== "none" && <rect width="100%" height="100%" fill={`url(#${grid})`} pointerEvents="none" />}
+        <PaperLayer paper={paper} view={view} />
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <g ref={worldRef}>{els.filter((e) => !snapPrev?.remove.includes(e.id)).map((e) => <g key={e.id} data-id={e.id}><Shape e={e} /></g>)}</g>
           {draft && <Shape e={snapPrev ? snapPrev.el : draft} />}
@@ -513,36 +541,86 @@ export function Canvas({ initial, onChange, title }: { initial: El[]; onChange: 
           onKeyDown={(e) => { if (e.key === "Escape") (e.target as HTMLElement).blur(); }} />
       )}
 
-      <div className="bg-panel bd absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1 rounded-xl border p-1.5 shadow">
-        {TOOLS.map(([t, icon, tip]) => (
-          <button key={t} title={tip} className={`${btn} ${tool === t ? "accent-bg" : ""}`} onClick={() => setTool(t)}>{icon}</button>
-        ))}
-        <span className="bd mx-1 h-5 border-l" />
-        {COLORS.map((c) => (
-          <button key={c} title={c} onClick={() => { setColor(c); if (selEl) commit(els.map((x) => (x.id === sel ? { ...x, c } : x))); }}
-            className="cdot h-5 w-5 rounded-full border-2" style={{ background: c === "auto" ? "var(--text)" : c, borderColor: color === c ? "var(--accent)" : "transparent", outline: "1px solid var(--border)" }} />
-        ))}
-        <input type="range" min={1} max={12} value={width} className="w-16" title="Stroke width (also applies to the selected object)"
-          onChange={(e) => { const v = +e.target.value; setWidth(v); if (selEl && selEl.t !== "plot") setEls((cur) => cur.map((x) => (x.id === sel ? (x.t === "text" ? { ...x, fs: 16 + v * 2 } : { ...x, w: x.t === "hl" ? v * 5 : v }) : x))); }}
-          onPointerUp={() => { if (selEl && selEl.t !== "plot") { past.current.push(widthSnap.current ?? els); future.current = []; onChange(elsRef.current); } }}
-          onPointerDown={() => { widthSnap.current = elsRef.current; }} />
-        <span className="muted text-xs" title="Stabiliser: higher = smoother lines for shaky mouse/trackpad">〰</span>
-        <input type="range" min={0} max={9} value={smooth} onChange={(e) => setSmooth(+e.target.value)} className="w-16" title="Stabiliser: higher = smoother lines for shaky mouse/trackpad" />
-        <button className={`${btn} ${snapGrid ? "accent-bg" : ""}`} title="Snap shapes, lines and arrows to the grid" onClick={() => setSnapGrid((v) => !v)}>⌗ snap</button>
-        <span className="bd mx-1 h-5 border-l" />
-        <button className={`${btn} ${penOnly ? "accent-bg" : ""}`} title="Pen only: fingers pan & zoom, only a stylus draws (switches on automatically when a stylus is detected)" onClick={() => setPenOnly((v) => !v)}>{penOnly ? "🖊 pen only" : "👆 finger draws"}</button>
-        <button className={btn} title="Undo (⌘Z)" onClick={undo}>↶</button>
-        <button className={btn} title="Redo (⇧⌘Z)" onClick={redo}>↷</button>
-        <button className={btn} title="Delete selected" onClick={() => { if (sel) { commit(els.filter((x) => x.id !== sel)); setSel(null); } }}>🗑</button>
-        <span className="bd mx-1 h-5 border-l" />
-        <button className={btn} title="Zoom out" onClick={() => zoomBy(1 / 1.25)}>−</button>
-        <button className={btn} title="Reset view" onClick={() => setView({ x: 0, y: 0, k: 1 })}>{Math.round(view.k * 100)}%</button>
-        <button className={btn} title="Zoom in" onClick={() => zoomBy(1.25)}>+</button>
-        <button className={btn} title="Background" onClick={() => setGrid(GRIDS[(GRIDS.indexOf(grid) + 1) % GRIDS.length])}>▦ {grid}</button>
-        <button className={btn} onClick={() => doExport("png")}>PNG</button>
-        <button className={btn} onClick={() => doExport("svg")}>SVG</button>
-        <button className={btn} onClick={() => confirm("Clear the whole canvas?") && commit([])}>Clear</button>
+      <div className="dock" role="toolbar" aria-label="Drawing tools">
+        <div className="dock-group">
+          {TOOLS.map(([t, icon, tip]) => (
+            <button key={t} title={tip} aria-label={tip} aria-pressed={tool === t} className={`${btn} ${tool === t ? "on" : ""}`} onClick={() => setTool(t)}><Icon name={icon} /></button>
+          ))}
+        </div>
+        <div className="dock-group">
+          {COLORS.map((c) => (
+            <button key={c} title={c === "auto" ? "Ink (follows theme)" : c} aria-label={`Colour ${c}`} aria-pressed={color === c}
+              onClick={() => { setColor(c); if (selEl) commit(els.map((x) => (selIds.includes(x.id) ? { ...x, c } : x))); }}
+              className={`cdot ${color === c ? "on" : ""}`} style={{ background: c === "auto" ? "var(--text)" : c }} />
+          ))}
+          <input type="range" min={1} max={12} value={width} className="range w-16" title="Stroke width (also applies to the selection)" aria-label="Stroke width"
+            onChange={(e) => { const v = +e.target.value; setWidth(v); if (selEl && selEl.t !== "plot") setEls((cur) => cur.map((x) => (selIds.includes(x.id) && x.t !== "plot" && !(x.g && x.t === "text") ? (x.t === "text" ? { ...x, fs: 16 + v * 2 } : { ...x, w: x.t === "hl" ? v * 5 : v }) : x))); }}
+            onPointerUp={() => { if (selEl && selEl.t !== "plot") { past.current.push(widthSnap.current ?? els); future.current = []; onChange(elsRef.current); } }}
+            onPointerDown={() => { widthSnap.current = elsRef.current; }} />
+        </div>
+        <div className="dock-group">
+          <button className={btn} title="Undo (⌘Z)" aria-label="Undo" onClick={undo}><Icon name="undo" /></button>
+          <button className={btn} title="Redo (⇧⌘Z)" aria-label="Redo" onClick={redo}><Icon name="redo" /></button>
+          {sel && <button className={btn} title="Delete selection" aria-label="Delete selection" onClick={delSel}><Icon name="trash" /></button>}
+          {selEl?.g && <button className={btn} title="Ungroup: edit the template's parts one by one" aria-label="Ungroup" onClick={() => commit(els.map((x) => (selIds.includes(x.id) ? { ...x, g: undefined } : x)))}><Icon name="ungroup" /></button>}
+        </div>
+        <div className="dock-group dock-main">
+          <button className={`btn ${panel === "templates" ? "btn-primary" : ""}`} aria-expanded={panel === "templates"} onClick={() => setPanel(panel === "templates" ? null : "templates")}><Icon name="template" /> Templates</button>
+          {onPaper && <button className={`btn ${panel === "paper" ? "btn-primary" : ""}`} aria-expanded={panel === "paper"} onClick={() => setPanel(panel === "paper" ? null : "paper")}><Icon name="paper" /> Paper</button>}
+          <button className={`${btn} ${panel === "more" ? "on" : ""}`} title="More options" aria-label="More options" aria-expanded={panel === "more"} onClick={() => setPanel(panel === "more" ? null : "more")}><Icon name="more" /></button>
+        </div>
       </div>
+
+      <div className="zoom-pill">
+        <button aria-label="Zoom out" onClick={() => zoomBy(1 / 1.25)}><Icon name="minus" /></button>
+        <button title="Reset view" onClick={() => setView({ x: 0, y: 0, k: 1 })}>{Math.round(view.k * 100)}%</button>
+        <button aria-label="Zoom in" onClick={() => zoomBy(1.25)}><Icon name="plus" /></button>
+      </div>
+
+      {panel === "more" && (
+        <div className="pop more-pop">
+          <label className="pop-row" title="Higher = smoother lines for a shaky mouse or trackpad"><span>Smoothing</span><input type="range" className="range w-24" min={0} max={9} value={smooth} onChange={(e) => setSmooth(+e.target.value)} /></label>
+          <label className="pop-row"><span>Snap shapes to grid</span><input type="checkbox" checked={snapGrid} onChange={() => setSnapGrid((v) => !v)} /></label>
+          <label className="pop-row" title="Fingers pan and zoom, only a stylus draws. Turns on by itself when a stylus is used."><span>Stylus only</span><input type="checkbox" checked={penOnly} onChange={() => setPenOnly((v) => !v)} /></label>
+          <div className="flex flex-wrap gap-2 pt-2">
+            <button className="btn" onClick={() => doExport("png")}><Icon name="download" /> PNG</button>
+            <button className="btn" onClick={() => doExport("svg")}><Icon name="download" /> SVG</button>
+            <button className="btn btn-danger" onClick={() => confirm("Clear the whole page?") && commit([])}>Clear page</button>
+          </div>
+        </div>
+      )}
+
+      {panel === "paper" && onPaper && (
+        <div className="pop paper-pop">
+          <div className="pop-head"><b>Paper</b><button className="btn icon-btn ghost" aria-label="Close" onClick={() => setPanel(null)}><Icon name="close" /></button></div>
+          <PaperPicker value={paper} onPick={(p) => onPaper(p)} />
+        </div>
+      )}
+
+      {panel === "templates" && (
+        <aside className="stamp-panel" aria-label="Templates">
+          <div className="pop-head"><b>Templates</b><button className="btn icon-btn ghost" aria-label="Close templates" onClick={() => setPanel(null)}><Icon name="close" /></button></div>
+          <div className="stamp-cats">
+            {CATEGORIES.map((c) => <button key={c} className={`chip-btn ${cat === c ? "on" : ""}`} onClick={() => setCat(c)}>{c}</button>)}
+          </div>
+          <div className="stamp-grid">
+            {built.map((st, i) => st.cat !== cat ? null : (
+              <button key={st.name} className="stamp" onClick={() => insertStamp(i)} title={`Insert ${st.name}`}>
+                <StampThumb els={st.els} />
+                <span>{st.name}</span>
+              </button>
+            ))}
+          </div>
+          <p className="stamp-hint">Tap a template to drop it in the middle of the page. Drag to move it; use Ungroup to edit its parts.</p>
+        </aside>
+      )}
     </div>
   );
+}
+
+function StampThumb({ els }: { els: El[] }) {
+  const bs = els.map(bbox);
+  const x = Math.min(...bs.map((q) => q.x)) - 8, y = Math.min(...bs.map((q) => q.y)) - 8;
+  const w = Math.max(...bs.map((q) => q.x + q.w)) + 8 - x, h = Math.max(...bs.map((q) => q.y + q.h)) + 8 - y;
+  return <svg viewBox={`${x} ${y} ${w} ${h}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">{els.map((e) => <Shape key={e.id} e={e} />)}</svg>;
 }

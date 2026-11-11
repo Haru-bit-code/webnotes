@@ -11,10 +11,14 @@ export type El = {
   c: string;                                       // colour, "auto" = follows theme
   w: number;                                       // stroke width
   text?: string; fs?: number;                      // text
-  expr?: string;
+  expr?: string;                                   // plot: "sin(x); x^2/9 @ -6..6"
   dx?: number; dy?: number;                        // cube: depth offset of the back face
-  head?: boolean;                                  // pen: draw an arrowhead at the end (curved arrow)                                   // plot: "sin(x); x^2/9 @ -6..6"
+  head?: boolean;                                  // pen: draw an arrowhead at the end (curved arrow)
+  g?: string;                                      // group id: templates move/delete as one
+  fill?: string;                                   // rect/ellipse/diamond fill ("accent" = tinted accent)
 };
+
+export type Paper = "blank" | "dots" | "grid" | "graph" | "ruled-narrow" | "ruled" | "ruled-wide" | "handwriting" | "cornell" | "isometric" | "music";
 
 export type Note = {
   id: string;
@@ -22,6 +26,8 @@ export type Note = {
   title: string;
   body: string;
   drawing?: El[];
+  paper?: Paper;                                   // canvas page background
+  ink?: El[];                                      // scribble layer drawn over a text note
   folder: string;
   tags: string[];
   pinned: boolean;
