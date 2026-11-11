@@ -9,6 +9,7 @@ import {
   Bundle, FrameCollector, Status, applyBundle, buildBundle, cleanCode, codeFromText, newCode, packBundle, receiveLink,
   showCode, startReceiving, startSending, toFrames, unpackBundle,
 } from "@/lib/transfer";
+import { Found, findSecrets, hideSecrets } from "@/lib/secrets";
 
 type Props = {
   notes: Note[]; folders: string[]; start?: { mode: "send" | "receive"; noteIds?: string[]; code?: string };
@@ -43,21 +44,56 @@ function Send({ notes, folders, noteIds }: { notes: Note[]; folders: string[]; n
   const [status, setStatus] = useState<Status | null>(null);
   const [optical, setOptical] = useState<string[] | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  // API keys written inside notes: asked about before anything is sent
+  const [secrets, setSecrets] = useState<null | { found: Found[]; then: "qr" | "anim" }>(null);
+  const [fix, setFix] = useState<"hide" | "skip">("hide");
   const live = notes.filter((n) => !n.deletedAt);
   const chosen = useMemo(() => what === "these" ? live.filter((n) => noteIds?.includes(n.id)) : what === "folder" ? live.filter((n) => n.folder === folder) : live.filter((n) => !n.archived), [what, folder, live, noteIds]);
   useEffect(() => () => stopRef.current?.(), []);
 
+  // what actually goes: keys hidden, or the notes holding them left out
+  const outgoing = (): Note[] => {
+    const hit = new Set(findSecrets(chosen).map((f) => f.noteId));
+    if (!hit.size) return chosen;
+    return fix === "skip" ? chosen.filter((n) => !hit.has(n.id)) : chosen.map((n) => (hit.has(n.id) ? hideSecrets(n) : n));
+  };
+  const check = (then: "qr" | "anim") => {
+    const found = findSecrets(chosen);
+    if (found.length) setSecrets({ found, then }); else (then === "qr" ? begin() : animated());
+  };
   const begin = async () => {
+    setSecrets(null);
+    const list = outgoing(); if (!list.length) return;
     const c = newCode(); setCode(c); setStatus({ phase: "starting" }); setOptical(null);
     stopRef.current?.();
-    stopRef.current = await startSending(c, async () => packBundle(await buildBundle(chosen, withFiles)), setStatus);
+    stopRef.current = await startSending(c, async () => packBundle(await buildBundle(list, withFiles)), setStatus);
   };
   const cancel = () => { stopRef.current?.(); stopRef.current = null; setCode(null); setStatus(null); setOptical(null); };
   const animated = async () => {
+    setSecrets(null);
+    const list = outgoing(); if (!list.length) return;
     stopRef.current?.(); stopRef.current = null; setCode(null); setStatus(null);
-    setOptical(toFrames(await packBundle(await buildBundle(chosen, false))));
+    setOptical(toFrames(await packBundle(await buildBundle(list, false))));
   };
 
+  if (secrets) {
+    const left = chosen.length - secrets.found.length;
+    return (
+      <div className="space-y-3 text-sm" role="alertdialog" aria-label="API keys found in notes">
+        <p className="secret-head"><Icon name="lock" /><b>{secrets.found.length === 1 ? "1 note contains" : `${secrets.found.length} notes contain`} something that looks like an API key.</b></p>
+        <ul className="received-list">{secrets.found.slice(0, 6).map((f) => <li key={f.noteId}><Icon name="notes" />{f.title}<span className="muted"> · {f.kinds.join(", ")} ({f.preview.join(", ")})</span></li>)}
+          {secrets.found.length > 6 && <li className="muted">and {secrets.found.length - 6} more</li>}</ul>
+        <fieldset className="space-y-1.5">
+          <label className="ink-check"><input type="radio" name="fix" checked={fix === "hide"} onChange={() => setFix("hide")} /> Hide the keys (they become “[API key removed]” in the copy that is sent; your notes here don&apos;t change)</label>
+          <label className="ink-check"><input type="radio" name="fix" checked={fix === "skip"} onChange={() => setFix("skip")} /> Leave {secrets.found.length === 1 ? "that note" : "those notes"} out{left ? ` and send the other ${left}` : ""}</label>
+        </fieldset>
+        <div className="flex gap-2">
+          <button className="btn btn-primary" disabled={fix === "skip" && !left} onClick={() => (secrets.then === "qr" ? begin() : animated())}>Continue</button>
+          <button className="btn" onClick={() => setSecrets(null)}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
   if (optical) return <OpticalSender frames={optical} count={chosen.length} onBack={() => setOptical(null)} />;
   if (code) {
     const pct = status?.total ? Math.round(((status.done ?? 0) / status.total) * 100) : 0;
@@ -76,7 +112,7 @@ function Send({ notes, folders, noteIds }: { notes: Note[]; folders: string[]; n
           {status?.phase === "sending" && <progress max={100} value={pct} aria-label="Sending progress" />}
           <div className="flex flex-wrap gap-2">
             <button className="btn" onClick={cancel}>{status?.phase === "done" ? "Done" : "Cancel"}</button>
-            {status?.phase !== "done" && <button className="btn ghost text-xs" onClick={animated}>No internet? Use animated QR</button>}
+            {status?.phase !== "done" && <button className="btn ghost text-xs" onClick={() => check("anim")}>No internet? Use animated QR</button>}
           </div>
         </div>
       </div>
@@ -95,8 +131,8 @@ function Send({ notes, folders, noteIds }: { notes: Note[]; folders: string[]; n
       <label className="ink-check"><input type="checkbox" checked={withFiles} onChange={(e) => setWithFiles(e.target.checked)} /> Include pictures and attached files</label>
       <p className="muted text-xs">{chosen.length} note{chosen.length === 1 ? "" : "s"}{withFiles && files ? `, ${files} file${files === 1 ? "" : "s"}` : ""} will be sent.</p>
       <div className="flex flex-wrap gap-2">
-        <button className="btn btn-primary" disabled={!chosen.length} onClick={begin}><Icon name="qr" /> Show QR code</button>
-        <button className="btn" disabled={!chosen.length} onClick={animated} title="For when one device has no internet: the other phone's camera reads a looping series of QR codes">Animated QR (offline)</button>
+        <button className="btn btn-primary" disabled={!chosen.length} onClick={() => check("qr")}><Icon name="qr" /> Show QR code</button>
+        <button className="btn" disabled={!chosen.length} onClick={() => check("anim")} title="For when one device has no internet: the other phone's camera reads a looping series of QR codes">Animated QR (offline)</button>
       </div>
     </div>
   );

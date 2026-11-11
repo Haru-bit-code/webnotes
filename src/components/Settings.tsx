@@ -8,6 +8,7 @@ import { saveFile } from "@/lib/save";
 import { BACKUP_EXT, Inspected, inspectBackup, makeBackup, restoreBackup } from "@/lib/fullBackup";
 import { fmtSize } from "@/lib/assets";
 import { DEFAULT_THEME, THEMES } from "@/lib/themes";
+import { findSecrets } from "@/lib/secrets";
 
 type Tab = "appearance" | "backup";
 const ACCENTS = ["#6366f1", "#2b59c3", "#0f7b6c", "#7a4fd6", "#c2410c", "#be185d", "#4d7c0f"];
@@ -28,7 +29,7 @@ export function SettingsPanel({ settings, onChange, notes, onImport, backup, onC
     try {
       const b = await makeBackup(notes, settings);
       await saveFile(b.blob, b.name);
-      setMade(`Saved ${b.name}: ${b.manifest.counts.notes} notes, ${b.manifest.counts.files} files (${fmtSize(b.blob.size)})${b.manifest.missing.length ? `. ${b.manifest.missing.length} file(s) your notes refer to were already missing from this browser.` : "."}`);
+      setMade(`Saved ${b.name}: ${b.manifest.counts.notes} notes, ${b.manifest.counts.files} files (${fmtSize(b.blob.size)})${b.manifest.missing.length ? `. ${b.manifest.missing.length} file(s) your notes refer to were already missing from this browser.` : "."}${(() => { const k = findSecrets(notes).length; return k ? ` ${k} note(s) contain something that looks like an API key, so keep this file private.` : ""; })()}`);
     } catch (e) { alert("The backup couldn't be made: " + (e as Error).message); }
     finally { setBusy(null); }
   };

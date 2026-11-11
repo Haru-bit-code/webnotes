@@ -699,3 +699,5 @@ kbd { background: var(--chip); border-color: var(--glass-line); }
 @media (max-width: 640px) { .scan-frame { top: 140px; width: 160px; height: 160px; margin: -80px 0 0 -80px; } }
 .scan-hint { font-size: 13px; color: var(--muted); text-align: center; }
 .modal.transfer fieldset .ink-check { display: flex; width: 100%; padding: 3px 0; color: var(--text); font-size: 14px; }
+.secret-head { display: flex; gap: 8px; align-items: center; } .secret-head .ico { color: var(--accent); }
+.modal.transfer fieldset .ink-check input[type=radio] { flex-shrink: 0; margin-top: 3px; align-self: flex-start; }
