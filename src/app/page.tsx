@@ -60,6 +60,7 @@ export default function Home() {
     const mq = matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", apply);
     root.style.setProperty("--accent", settings.accent);
+    root.classList.toggle("no-glass", settings.glass === false);
     root.style.setProperty("--font-body", FONTS[settings.font]);
     root.style.setProperty("--font-size", settings.fontSize + "px");
     return () => mq.removeEventListener("change", apply);
@@ -147,12 +148,12 @@ export default function Home() {
   if (!ready) return null;
 
   return (
-    <div className="app flex h-[100dvh]"
+    <div className="app app-shell flex h-[100dvh]"
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target || !e.relatedTarget) setDragging(false); }}
       onDrop={(e) => { setDragging(false); const fs = Array.from(e.dataTransfer.files); if (fs.length) { e.preventDefault(); setImporting(fs); } }}>
       {dragging && <div className="drop-overlay" aria-hidden="true"><div><Icon name="upload" /><b>Drop to import</b><span>PDF, images, Word, PowerPoint, Excel, CSV, text and more</span></div></div>}
-      <aside className={`sidebar hidden w-60 shrink-0 flex-col ${hideSide ? "" : "md:flex"}`}>
+      <aside className={`sidebar pane pane-1 hidden w-60 shrink-0 flex-col ${hideSide ? "" : "md:flex"}`}>
         <div className="brand">
           <span className="brand-mark" aria-hidden="true"><Icon name="pen" /></span>
           <span className="brand-name">WebNotes</span>
@@ -170,7 +171,7 @@ export default function Home() {
         </nav>
       </aside>
 
-      <section className={`list-pane w-full shrink-0 flex-col md:w-80 ${current ? "hidden" : "flex"} ${hideList ? "" : "md:flex"}`}>
+      <section className={`list-pane pane pane-2 w-full shrink-0 flex-col md:w-80 ${current ? "hidden" : "flex"} ${hideList ? "" : "md:flex"}`}>
         <div className="list-head">
           <div className="flex items-center gap-2">
             {hideSide && <button className="btn icon-btn ghost hidden md:inline-flex" title="Show sidebar" aria-label="Show sidebar" onClick={() => setHideSide(false)}><Icon name="sidebar" /></button>}
@@ -227,7 +228,7 @@ export default function Home() {
         </div>
       </section>
 
-      <main className={`min-w-0 flex-1 ${current ? "block" : "hidden md:block"}`}>
+      <main className={`main-pane pane pane-strong pane-3 min-w-0 flex-1 ${current ? "block" : "hidden md:block"}`}>
         {current ? (
           <div className="flex h-full flex-col">
             <div className="min-h-0 flex-1">
@@ -274,7 +275,7 @@ export default function Home() {
       </main>
 
       {showAI && (
-        <aside className="fixed inset-0 z-40 md:static md:inset-auto md:z-auto md:w-96 md:shrink-0">
+        <aside className="ai-pane pane fixed inset-0 z-40 md:static md:inset-auto md:z-auto md:w-96 md:shrink-0">
           <AIPanel ai={ai} setAI={setAI} notes={live} note={current} onClose={() => setShowAI(false)}
             onInsert={(text) => current && current.kind === "doc" && update(current.id, appendText(current, text))} />
         </aside>

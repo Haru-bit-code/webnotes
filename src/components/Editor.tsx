@@ -114,7 +114,7 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="editor-in flex h-full flex-col">
       <div className="toolbar">
         {leading}
         {note.kind === "doc" && <span className="relative">

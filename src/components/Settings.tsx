@@ -7,7 +7,7 @@ import { FORMATS } from "@/lib/formats";
 import { saveFile } from "@/lib/save";
 
 type Tab = "appearance" | "backup";
-const ACCENTS = ["#2b59c3", "#0f7b6c", "#7a4fd6", "#c2410c", "#be185d", "#4d7c0f"];
+const ACCENTS = ["#6366f1", "#2b59c3", "#0f7b6c", "#7a4fd6", "#c2410c", "#be185d", "#4d7c0f"];
 
 export function SettingsPanel({ settings, onChange, notes, onImport, backup, onClose }: {
   settings: Settings; onChange: (s: Settings) => void; notes: Note[];
@@ -49,6 +49,7 @@ export function SettingsPanel({ settings, onChange, notes, onImport, backup, onC
                 <label className="swatch swatch-custom" title="Custom colour"><input type="color" value={settings.accent} onChange={(e) => onChange({ ...settings, accent: e.target.value })} /></label>
               </div>
             </Row>
+            <Row label="Glass effects"><Seg value={settings.glass === false ? "off" : "on"} options={[["on", "On"], ["off", "Solid"]]} onChange={(v) => onChange({ ...settings, glass: v === "on" })} /></Row>
             <Row label="New notes are"><select className="field w-auto" aria-label="Type for new notes" value={settings.newFormat ?? "markdown"} onChange={(e) => onChange({ ...settings, newFormat: e.target.value as Settings["newFormat"] })}>
               {FORMATS.filter((f) => f.id !== "scribble").map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select></Row>
             <Row label="Note font"><Seg value={settings.font} options={[["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"], ["hand", "Hand"]]} onChange={(v) => onChange({ ...settings, font: v as Settings["font"] })} /></Row>

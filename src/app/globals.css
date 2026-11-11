@@ -418,3 +418,179 @@ svg.touch-none { -webkit-touch-callout: none; -webkit-user-select: none; user-se
 .swatch { aspect-ratio: 1; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--text) 15%, transparent); cursor: pointer; transition: transform .12s; }
 .swatch:hover, .swatch:focus-visible { transform: scale(1.12); outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .swatch { transition: none; } }
+
+/* ======================================================================
+   Glass theme: frosted panes floating over a soft glow of the accent colour.
+   Unlayered on purpose, so it sits on top of the base styles above.
+   Turn it off with Settings → Glass effects → Solid (html.no-glass).
+   ====================================================================== */
+:root {
+  --bg: #eceef6;
+  --raised: #ffffff;
+  --chip: rgba(22, 26, 48, .055);
+  --border: rgba(22, 26, 48, .1);
+  --muted: #586075;
+  --accent-2: #c084fc;   /* lilac and sky: the other two colours of the glow */
+  --accent-3: #38bdf8;
+  --glass: rgba(255, 255, 255, .56);
+  --glass-strong: rgba(255, 255, 255, .8);
+  --glass-pop: rgba(255, 255, 255, .8);
+  --glass-edge: rgba(255, 255, 255, .78);
+  --glass-line: rgba(22, 26, 48, .07);
+  --glass-hover: rgba(22, 26, 48, .045);
+  --glass-on: rgba(255, 255, 255, .9);
+  --blur: blur(24px) saturate(170%);
+  --shadow: 0 1px 1px rgba(22, 26, 48, .04), 0 14px 36px -14px rgba(22, 26, 48, .28);
+  --shadow-pane: inset 0 1px 0 rgba(255, 255, 255, .7), 0 22px 50px -26px rgba(40, 40, 90, .3);
+  --ease: cubic-bezier(.22, 1, .36, 1);          /* smooth deceleration for everything */
+  --ease-spring: cubic-bezier(.34, 1.45, .64, 1); /* a little overshoot for small things that pop */
+  --r-sm: 8px; --r: 12px; --r-lg: 18px; --r-pane: 22px;
+}
+:root.dark {
+  --bg: #08090f;
+  --raised: #1b1d2a;
+  --chip: rgba(255, 255, 255, .06);
+  --border: rgba(255, 255, 255, .09);
+  --text: #eceef5; --muted: #9399ad;
+  --glass: rgba(28, 30, 46, .5);
+  --glass-strong: rgba(19, 21, 33, .74);
+  --glass-pop: rgba(30, 32, 47, .82);
+  --glass-edge: rgba(255, 255, 255, .075);
+  --glass-line: rgba(255, 255, 255, .065);
+  --glass-hover: rgba(255, 255, 255, .05);
+  --glass-on: rgba(255, 255, 255, .09);
+  --shadow: 0 1px 1px rgba(0, 0, 0, .3), 0 18px 44px -16px rgba(0, 0, 0, .75);
+  --shadow-pane: inset 0 1px 0 rgba(255, 255, 255, .06), 0 26px 60px -30px rgba(0, 0, 0, .85);
+}
+/* solid mode (setting, or the system's "reduce transparency") */
+:root.no-glass { --glass: #f4f5fa; --glass-strong: #ffffff; --glass-pop: #ffffff; --glass-edge: rgba(22, 26, 48, .08); }
+:root.dark.no-glass { --glass: #13151f; --glass-strong: #161824; --glass-pop: #1d2030; --glass-edge: rgba(255, 255, 255, .07); }
+:root.no-glass *, :root.no-glass *::before { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+@media (prefers-reduced-transparency: reduce) {
+  :root { --glass: #f4f5fa; --glass-strong: #fff; --glass-pop: #fff; }
+  :root.dark { --glass: #13151f; --glass-strong: #161824; --glass-pop: #1d2030; }
+  * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}
+
+/* the glow behind the glass, tinted by the accent colour you pick in Settings */
+body { background: var(--bg); }
+body::before {
+  content: ""; position: fixed; inset: -15%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(42% 38% at 14% 8%, color-mix(in srgb, var(--accent) var(--glow-a, 42%), transparent), transparent 72%),
+    radial-gradient(38% 34% at 90% 12%, color-mix(in srgb, var(--accent-2) 34%, transparent), transparent 72%),
+    radial-gradient(48% 42% at 70% 98%, color-mix(in srgb, var(--accent-3) 28%, transparent), transparent 72%),
+    radial-gradient(30% 28% at 6% 88%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 72%);
+  animation: glow-drift 48s ease-in-out infinite alternate;
+}
+:root.dark body::before { opacity: 1; filter: saturate(1.15); }
+:root.dark { --glow-a: 55%; }
+:root.no-glass body::before { animation: none; opacity: .45; }
+@keyframes glow-drift { to { transform: translate3d(2.5%, -2%, 0) rotate(3deg) scale(1.04); } }
+
+/* ---- panes ---- */
+/* the frosted layer is a pseudo-element behind the content: a blur on the pane itself would trap
+   full-screen overlays (menus' click-outside layers, toasts) inside the pane */
+.pane:not(.fixed) { position: relative; }
+.pane { background: transparent; border: 1px solid var(--glass-edge); box-shadow: var(--shadow-pane); }
+.pane::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+.pane-strong::before { background: var(--glass-strong); }
+.sidebar, .list-pane { background-image: none; border-right-color: var(--glass-edge); }
+@media (min-width: 768px) {
+  .app-shell { padding: 10px; gap: 10px; }
+  .pane { border-radius: var(--r-pane); overflow: hidden; }
+  .ai-pane { position: relative; border-radius: var(--r-pane); overflow: hidden; }
+}
+@media (max-width: 767px) { .pane { border-width: 0; box-shadow: none; } }
+.ai-pane .bg-panel { background: transparent; border-left: 0; }
+
+/* the one orchestrated moment: panes float in when the app opens */
+.pane-1, .pane-2, .pane-3 { animation: pane-in .7s var(--ease) backwards; }
+.pane-2 { animation-delay: .06s; } .pane-3 { animation-delay: .12s; }
+@keyframes pane-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+/* switching notes: the new one settles in */
+.editor-in { animation: editor-in .38s var(--ease) backwards; }
+@keyframes editor-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* ---- lines inside panes ---- */
+.toolbar, .meta-bar, .rich-bar, .ink-bar, .overlay-chrome, .backlinks, .modal-foot, .tabs, .notice { border-color: var(--glass-line); }
+.rich-bar, .overlay-chrome { background: transparent; }
+.ink-bar { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.source { background: color-mix(in srgb, var(--text) 2.5%, transparent); }
+.notice { background: var(--chip); }
+
+/* ---- controls ---- */
+.btn { border-color: var(--glass-line); background: color-mix(in srgb, var(--raised) 62%, transparent); border-radius: var(--r);
+  transition: background-color .22s var(--ease), border-color .22s var(--ease), color .22s var(--ease), box-shadow .22s var(--ease), transform .22s var(--ease-spring); }
+.btn:hover { background: color-mix(in srgb, var(--raised) 85%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, var(--glass-line)); }
+.btn:active { transform: scale(.955); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--glass-hover); }
+.btn-primary { border-color: transparent; color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 62%, var(--accent-2)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 8px 20px -10px color-mix(in srgb, var(--accent) 80%, transparent); }
+.btn-primary:hover { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 90%, #fff), color-mix(in srgb, var(--accent) 55%, var(--accent-2))); color: var(--on-accent); border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 12px 26px -10px color-mix(in srgb, var(--accent) 85%, transparent); }
+.icon-btn { width: 34px; height: 34px; }
+.field { background: var(--chip); border-color: transparent; border-radius: var(--r); transition: border-color .2s var(--ease), box-shadow .2s var(--ease), background-color .2s var(--ease); }
+.field:focus { background: color-mix(in srgb, var(--raised) 80%, transparent); }
+.search { background: var(--chip); border-radius: var(--r); padding: 9px 12px; transition: border-color .2s var(--ease), background-color .2s var(--ease), box-shadow .2s var(--ease); }
+.search:focus-within { background: color-mix(in srgb, var(--raised) 85%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
+.seg { background: var(--chip); border-radius: var(--r); padding: 3px; }
+.seg button { border-radius: 9px; transition: background-color .25s var(--ease), color .25s var(--ease), box-shadow .25s var(--ease); }
+.seg button.on, .seg button[aria-checked="true"] { background: var(--glass-on); box-shadow: 0 1px 2px rgba(0, 0, 0, .1), 0 4px 12px -6px rgba(0, 0, 0, .25); }
+:root:not(.dark) .seg button.on, :root:not(.dark) .seg button[aria-checked="true"] { background: #fff; }
+.switch-btn { background: color-mix(in srgb, var(--raised) 62%, transparent); border-color: var(--glass-line); }
+.switch-btn .switch, .switch-btn .switch::after { transition: transform .32s var(--ease-spring), background-color .25s var(--ease); }
+.pill { background: var(--chip); }
+
+/* ---- sidebar & list ---- */
+.brand-mark { border-radius: 10px; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--accent-2))); box-shadow: 0 6px 16px -8px var(--accent); }
+.nav-item { border-radius: var(--r); padding: 8px 11px; transition: background-color .22s var(--ease), color .22s var(--ease), transform .22s var(--ease-spring); }
+.nav-item:hover { background: var(--glass-hover); }
+.nav-item:active { transform: scale(.98); }
+.nav-item.on { background: var(--glass-on); box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 6px 16px -10px rgba(0, 0, 0, .3); }
+:root:not(.dark) .nav-item.on { background: rgba(255, 255, 255, .85); }
+.note-card { border-radius: 16px; padding: 12px 14px; margin-bottom: 4px; border-color: transparent;
+  transition: background-color .25s var(--ease), border-color .25s var(--ease), box-shadow .25s var(--ease), transform .25s var(--ease-spring); }
+.note-card:hover { background: var(--glass-hover); }
+.note-card:active { transform: scale(.985); }
+.note-card.on { background: var(--glass-on); border-color: var(--glass-edge);
+  box-shadow: inset 3px 0 0 var(--accent), 0 1px 2px rgba(0, 0, 0, .05), 0 10px 24px -14px rgba(0, 0, 0, .35); }
+:root:not(.dark) .note-card.on { background: rgba(255, 255, 255, .88); }
+
+/* ---- floating surfaces: menus, popovers, dialogs, canvas tools ---- */
+.dock-group, .stamp-panel { background: var(--glass-pop); border-color: var(--glass-edge); box-shadow: var(--shadow); }
+.menu, .pop, .color-pop { background: var(--glass-pop); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border-color: var(--glass-edge); box-shadow: var(--shadow); }
+.menu, .pop, .color-pop { border-radius: var(--r-lg); transform-origin: top; animation: float-in .26s var(--ease-spring) both; }
+.menu.right-0, .new-menu { transform-origin: top right; }
+@keyframes float-in { from { opacity: 0; transform: translateY(-6px) scale(.95); } }
+.menu-item { border-radius: var(--r); transition: background-color .18s var(--ease); }
+.menu-item:hover { background: var(--glass-hover); }
+.dock-group { border-radius: 16px; }
+.modal-scrim { background: rgba(8, 10, 22, .32); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); animation: fade .3s var(--ease) both; }
+.modal { background: var(--glass-pop); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border-color: var(--glass-edge); border-radius: 24px; box-shadow: var(--shadow-pane), var(--shadow); animation: modal-in .42s var(--ease) backwards; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(18px) scale(.97); } }
+.drop-overlay > div { background: var(--glass-pop); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+.fab { background: var(--glass-pop); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border-color: var(--glass-edge); }
+
+/* ---- start screen ---- */
+.empty-main { background-image: none; }
+.empty-sheet { background: color-mix(in srgb, var(--glass-pop) 70%, transparent); border-color: var(--glass-edge); border-radius: 26px; box-shadow: var(--shadow-pane), var(--shadow); transform: none; animation: modal-in .6s var(--ease) .15s backwards; }
+.type-tile { background: color-mix(in srgb, var(--raised) 45%, transparent); border-color: var(--glass-line); border-radius: 16px; transition: border-color .25s var(--ease), background-color .25s var(--ease), transform .3s var(--ease-spring), box-shadow .25s var(--ease); }
+.type-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 26px -16px color-mix(in srgb, var(--accent) 70%, transparent); }
+.type-tile:active { transform: scale(.97); }
+kbd { background: var(--chip); border-color: var(--glass-line); }
+
+/* ---- writing surfaces stay calm and readable ---- */
+.sheet-grid, .code-view { background: var(--raised); }
+
+/* ---- phones: bigger touch targets ---- */
+@media (max-width: 767px) {
+  .icon-btn { width: 40px; height: 40px; }
+  .btn { min-height: 38px; }
+  .nav-item, .menu-item { min-height: 44px; align-items: center; }
+  .note-card { padding: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
