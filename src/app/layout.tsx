@@ -1,4 +1,12 @@
 import "./globals.css";
+// fonts are bundled with the app (no Google Fonts request), so they also work offline in the Android app
+import "@fontsource/hanken-grotesk/latin-400.css";
+import "@fontsource/hanken-grotesk/latin-500.css";
+import "@fontsource/hanken-grotesk/latin-600.css";
+import "@fontsource/hanken-grotesk/latin-700.css";
+import "@fontsource-variable/newsreader/opsz.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
 import "@fontsource/kalam/latin-400.css";
 import "@fontsource/kalam/latin-700.css";
 import "@fontsource/caveat/latin-500.css";

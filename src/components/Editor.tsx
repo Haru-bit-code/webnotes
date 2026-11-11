@@ -14,6 +14,7 @@ import { FORMATS, LANGS, LANG_EXT, convertNote, formatOf } from "@/lib/formats";
 import { sheetsText } from "@/lib/sheet";
 import { NoteFormat } from "@/lib/types";
 import hljs from "highlight.js/lib/common";
+import { saveFile } from "@/lib/save";
 
 type Mode = "edit" | "split" | "preview";
 
@@ -109,10 +110,7 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
     onChange({ body: note.body.slice(0, at) + text + note.body.slice(at) });
   };
   const exportMd = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([`# ${note.title}\n\n${note.body}`], { type: "text/markdown" }));
-    a.download = (note.title.trim() || "note").replace(/[^\w-]+/g, "_") + ".md";
-    a.click();
+    saveFile(new Blob([`# ${note.title}\n\n${note.body}`], { type: "text/markdown" }), (note.title.trim() || "note").replace(/[^\w-]+/g, "_") + ".md");
   };
 
   return (

@@ -1,0 +1,108 @@
+# Builds the WebNotes Android app (APK).
+#
+#  - Push a version tag (git tag v1.0.0 && git push origin v1.0.0) → a signed APK is published as a GitHub Release.
+#  - "Run workflow" on the Actions tab → a test APK you can download from the run (Artifacts).
+#
+# Release signing uses these repository secrets (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   the .jks file, base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD      (optional, defaults to the keystore password)
+name: Android APK
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Version from tag
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            NAME="${GITHUB_REF_NAME#v}"
+            IFS=. read -r MA MI PA <<< "${NAME%%-*}"
+            CODE=$(( ${MA:-0} * 10000 + ${MI:-0} * 100 + ${PA:-0} ))
+          else
+            NAME="0.0.${GITHUB_RUN_NUMBER}-test"
+            CODE=$GITHUB_RUN_NUMBER
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Building WebNotes $NAME (code $CODE)"
+
+      - name: Build the web app
+        run: |
+          npm ci
+          BUILD_TARGET=app npx next build
+          npx cap sync android
+
+      - name: Signing key
+        id: key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -n "$KEYSTORE_B64" ]]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "file=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "::error::Add the ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS secrets before releasing (see the top of this file)."
+            exit 1
+          else
+            echo "::notice::No signing key yet: building a debug-signed test APK."
+          fi
+
+      - name: Build APK
+        working-directory: android
+        env:
+          VERSION_NAME: ${{ steps.ver.outputs.name }}
+          VERSION_CODE: ${{ steps.ver.outputs.code }}
+          ANDROID_KEYSTORE_FILE: ${{ steps.key.outputs.file }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [[ -n "$ANDROID_KEYSTORE_FILE" ]]; then
+            ./gradlew --no-daemon assembleRelease
+            cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/WebNotes-${VERSION_NAME}.apk"
+          else
+            ./gradlew --no-daemon assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/WebNotes-${VERSION_NAME}.apk"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WebNotes-${{ steps.ver.outputs.name }}
+          path: ${{ runner.temp }}/WebNotes-${{ steps.ver.outputs.name }}.apk
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: WebNotes ${{ steps.ver.outputs.name }}
+          files: ${{ runner.temp }}/WebNotes-${{ steps.ver.outputs.name }}.apk
+          generate_release_notes: true
+          body: |
+            **Install on Android:** download `WebNotes-${{ steps.ver.outputs.name }}.apk` below on your phone, open it, and allow "Install unknown apps" for your browser or Files app when asked.
+            Updating: install the new APK over the old one — your notes stay.

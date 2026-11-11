@@ -1,0 +1,7 @@
+{
+  "appId": "com.ansar.webnotes",
+  "appName": "WebNotes",
+  "webDir": "out",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

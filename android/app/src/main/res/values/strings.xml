@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">WebNotes</string>
+    <string name="title_activity_main">WebNotes</string>
+    <string name="package_name">com.ansar.webnotes</string>
+    <string name="custom_url_scheme">com.ansar.webnotes</string>
+</resources>

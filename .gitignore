@@ -4,3 +4,6 @@ node_modules
 tsconfig.tsbuildinfo
 .env*
 .DS_Store
+
+# static build for the Android app
+/out

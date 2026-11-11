@@ -1,15 +1,24 @@
 {
   "name": "webnotes",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "build:app": "BUILD_TARGET=app next build && cap sync android"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
+    "@fontsource-variable/newsreader": "^5.3.0",
     "@fontsource/caveat": "^5.2.6",
+    "@fontsource/hanken-grotesk": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/kalam": "^5.2.5",
     "docx": "^9.1.1",
     "dompurify": "^3.4.16",
@@ -31,6 +40,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
     "@tailwindcss/postcss": "^4",
     "@types/dompurify": "^3.0.5",
     "@types/node": "^22",

@@ -2,6 +2,7 @@
 // Binary files (images, PDF pages, attachments) live in IndexedDB, not in the notes JSON,
 // because browser localStorage only holds a few MB. Notes refer to them as "asset:<id>".
 import { useEffect, useState } from "react";
+import { saveFile } from "./save";
 
 const DB = "webnotes-assets", STORE = "files";
 export type Asset = { id: string; blob: Blob; name: string; type: string; size: number; createdAt: number };
@@ -47,7 +48,6 @@ export async function assetDataUrl(id: string) {
 }
 export async function downloadAsset(id: string, fallbackName = "file") {
   const a = await getAsset(id); if (!a) { alert("This file isn't stored in this browser. It may have been imported on another device."); return; }
-  const link = document.createElement("a"); link.href = URL.createObjectURL(a.blob); link.download = a.name || fallbackName; link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+  await saveFile(a.blob, a.name || fallbackName);
 }
 export const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);

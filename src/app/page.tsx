@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotes, TRASH_DAYS } from "@/lib/store";
 import { Note } from "@/lib/types";
 import { Editor } from "@/components/Editor";
@@ -98,6 +98,26 @@ export default function Home() {
   const [pickPaper, setPickPaper] = useState(false);
   const [importing, setImporting] = useState<File[] | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Android app: the back button closes what's on top (dialog, menu, panel, open note) before leaving the app
+  const onBack = useRef<() => boolean>(() => false);
+  onBack.current = () => {
+    if (importing) { setImporting(null); return true; }
+    if (pickPaper) { setPickPaper(false); return true; }
+    if (showSettings) { setShowSettings(false); return true; }
+    if (showNew) { setShowNew(false); return true; }
+    if (document.querySelector(".modal-scrim, .pop")) { document.activeElement instanceof HTMLElement && document.activeElement.blur(); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); (document.querySelector(".modal-scrim") as HTMLElement | null)?.click(); return true; }
+    if (showAI && innerWidth < 768) { setShowAI(false); return true; }
+    if (selected) { setSelected(null); return true; }
+    return false;
+  };
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    import("@/lib/save").then(({ isApp }) => {
+      if (!isApp()) return;
+      import("@capacitor/app").then(({ App }) => App.addListener("backButton", () => { if (!onBack.current()) App.minimizeApp(); }).then((h) => { off = () => h.remove(); }));
+    });
+    return () => off?.();
+  }, []);
   useEffect(() => {
     const off = () => setDragging(false);
     window.addEventListener("drop", off, true); window.addEventListener("dragend", off, true);

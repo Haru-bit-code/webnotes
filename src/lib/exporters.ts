@@ -3,6 +3,7 @@
 import { Marked, Token, Tokens } from "marked";
 import { assetDataUrl, getAsset } from "./assets";
 import { renderMarkdown } from "./markdown";
+import { saveFile } from "./save";
 
 const lexer = new Marked({ gfm: true });
 
@@ -108,6 +109,5 @@ export async function noteToHtml(title: string, body: string): Promise<Blob> {
 }
 
 export function download(blob: Blob, name: string) {
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return saveFile(blob, name);
 }

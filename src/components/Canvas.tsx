@@ -12,6 +12,7 @@ import { imageEl, pdfPages } from "@/lib/importers";
 import { PaperLayer, PaperPicker } from "./Paper";
 import { Icon } from "./Icon";
 import rough from "roughjs";
+import { saveFile } from "@/lib/save";
 
 type Tool = "select" | "hand" | "pen" | "hl" | "eraser" | "line" | "arrow" | "rect" | "ellipse" | "diamond" | "triangle" | "cube" | "text" | "axes" | "plot";
 const TOOLS: [Tool, string, string][] = [
@@ -828,15 +829,15 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
     img.onerror = () => fail(new Error("Couldn't draw the page"));
     img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   });
-  const download = (href: string, name: string) => { const a = document.createElement("a"); a.href = href; a.download = name; a.click(); };
+  const download = (blob: Blob, name: string) => saveFile(blob, name);
   const fname = (ext: string) => (title.trim() || "canvas").replace(/[^\w-]+/g, "_") + "." + ext;
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const doExport = async (kind: "png" | "svg" | "pdf") => {
     try {
       if (kind !== "pdf") {
         const o = await buildSvg(); if (!o) return alert("Nothing to export yet");
-        if (kind === "svg") return download("data:image/svg+xml;charset=utf-8," + encodeURIComponent(o.svg), fname("svg"));
-        const png = await svgToPng(o.svg, o.w, o.h, 2); const u = URL.createObjectURL(png); download(u, fname("png")); setTimeout(() => URL.revokeObjectURL(u), 4000); return;
+        if (kind === "svg") return download(new Blob([o.svg], { type: "image/svg+xml" }), fname("svg"));
+        const png = await svgToPng(o.svg, o.w, o.h, 2); download(png, fname("png")); return;
       }
       // PDF: one PDF page per imported PDF page (with everything written on it), else the whole drawing on one page
       setBusyMsg("Making PDF…");
@@ -853,7 +854,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
         const page = pdf.addPage([reg.pw, reg.ph]); page.drawImage(png, { x: 0, y: 0, width: reg.pw, height: reg.ph });
       }
       const bytes = await pdf.save();
-      const u = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" })); download(u, fname("pdf")); setTimeout(() => URL.revokeObjectURL(u), 4000);
+      download(new Blob([bytes as BlobPart], { type: "application/pdf" }), fname("pdf"));
     } catch (e) { alert("Export failed: " + (e as Error).message); }
     finally { setBusyMsg(null); }
   };

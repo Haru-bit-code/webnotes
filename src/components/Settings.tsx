@@ -4,6 +4,7 @@ import { Note, Settings } from "@/lib/types";
 import { useBackup } from "@/lib/backup";
 import { Icon } from "./Icon";
 import { FORMATS } from "@/lib/formats";
+import { saveFile } from "@/lib/save";
 
 type Tab = "appearance" | "backup";
 const ACCENTS = ["#2b59c3", "#0f7b6c", "#7a4fd6", "#c2410c", "#be185d", "#4d7c0f"];
@@ -14,10 +15,7 @@ export function SettingsPanel({ settings, onChange, notes, onImport, backup, onC
 }) {
   const [tab, setTab] = useState<Tab>("appearance");
   const exportJson = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(notes, null, 2)], { type: "application/json" }));
-    a.download = `webnotes-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
+    saveFile(new Blob([JSON.stringify(notes, null, 2)], { type: "application/json" }), `webnotes-${new Date().toISOString().slice(0, 10)}.json`);
     try { localStorage.setItem("webnotes:lastExport", String(Date.now())); } catch { /* ignore */ }
   };
   const importJson = async (f?: File) => {

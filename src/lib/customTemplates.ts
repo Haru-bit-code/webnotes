@@ -3,6 +3,7 @@
 // shared between open components with a window event. Export/Import moves them between devices.
 import { useCallback, useEffect, useState } from "react";
 import { El, Paper } from "./types";
+import { saveFile } from "./save";
 
 export type CustomTemplate = { id: string; name: string; cat: string; kind: "block" | "page"; paper?: Paper; els: El[]; createdAt: number };
 const KEY = "webnotes:templates", EVT = "webnotes:templates";
@@ -24,9 +25,7 @@ export function useCustomTemplates() {
   const add = useCallback((t: Omit<CustomTemplate, "id" | "createdAt">) => write([{ ...t, id: uid(), createdAt: Date.now() }, ...read()]), []);
   const remove = useCallback((id: string) => write(read().filter((t) => t.id !== id)), []);
   const exportFile = useCallback(() => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify({ webnotesTemplates: 1, templates: read() }, null, 2)], { type: "application/json" }));
-    a.download = `webnotes-templates-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+    saveFile(new Blob([JSON.stringify({ webnotesTemplates: 1, templates: read() }, null, 2)], { type: "application/json" }), `webnotes-templates-${new Date().toISOString().slice(0, 10)}.json`);
   }, []);
   const importFile = useCallback(async (f: File) => {
     try {
