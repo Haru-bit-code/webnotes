@@ -10,6 +10,7 @@ const P: Record<string, React.ReactNode> = {
   plus: <path d="M12 5v14M5 12h14" />,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
   sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
+  menu: <path d="M4 7h16M4 12h16M4 17h10" />,
   list: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
   left: <path d="M15 5l-7 7 7 7" />, right: <path d="M9 5l7 7-7 7" />,
   sparkle: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />,

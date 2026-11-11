@@ -30,6 +30,12 @@ export async function putAsset(blob: Blob, name = "file", type = blob.type): Pro
   return id;
 }
 export const getAsset = (id: string) => tx<Asset | undefined>("readonly", (s) => s.get(id));
+export const listAssets = () => tx<Asset[]>("readonly", (s) => s.getAll());
+/** store a file under a known id (used when restoring a backup) */
+export async function putAssetWithId(a: Asset) {
+  try { await tx("readwrite", (s) => s.put(a)); urls.delete(a.id); }
+  catch { throw new Error("Couldn't save a file from the backup (browser storage may be full)."); }
+}
 
 // one object URL per asset for the whole session
 const urls = new Map<string, Promise<string | null>>();

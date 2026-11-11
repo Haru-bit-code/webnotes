@@ -3,6 +3,7 @@
 // Content is stored as clean HTML (note.html); note.body keeps its plain text for search and the AI panel.
 import { useEffect, useRef, useState } from "react";
 import { cleanHtml, htmlText } from "@/lib/formats";
+import { countHeld, holdHtml, releaseIn } from "@/lib/remote";
 import { assetUrl, putAsset, fmtSize } from "@/lib/assets";
 import { Icon } from "./Icon";
 
@@ -20,6 +21,7 @@ export function RichEditor({ html, onChange, readOnly, toolbarless, children, wr
   const last = useRef<string>("");
   const [state, setState] = useState<Record<string, boolean | string>>({});
   const [palette, setPalette] = useState<null | "text" | "mark">(null);
+  const [held, setHeld] = useState(0); // pictures from the web waiting for permission
   const [lastText, setLastText] = useState("#e5484d"), [lastMark, setLastMark] = useState(HIGHLIGHTS[0][1]);
   useEffect(() => {
     if (!palette) return;
@@ -39,7 +41,7 @@ export function RichEditor({ html, onChange, readOnly, toolbarless, children, wr
   // load content (and again only if it changed from outside, e.g. the AI panel added text)
   useEffect(() => {
     const el = ref.current; if (!el || html === last.current) return;
-    el.innerHTML = cleanHtml(html); last.current = html; resolveImages();
+    el.innerHTML = holdHtml(cleanHtml(html)).html; last.current = html; resolveImages(); setHeld(countHeld(el));
   }, [html]);
 
   const resolveImages = () => ref.current?.querySelectorAll<HTMLImageElement>("img[data-asset]").forEach((img) => {
@@ -49,6 +51,7 @@ export function RichEditor({ html, onChange, readOnly, toolbarless, children, wr
     const el = ref.current; if (!el) return;
     const copy = el.cloneNode(true) as HTMLElement;
     copy.querySelectorAll("img[data-asset]").forEach((i) => i.removeAttribute("src"));
+    releaseIn(copy); // pictures from the web keep their real address in the saved note
     const out = cleanHtml(copy.innerHTML); last.current = out;
     onChange(out, htmlText(out));
   };
@@ -136,6 +139,12 @@ export function RichEditor({ html, onChange, readOnly, toolbarless, children, wr
           {B("undo", "undo", "Undo")}{B("redo", "redo", "Redo")}
         </div>
       )}
+      {held > 0 && (
+        <div className="remote-bar top" role="status">
+          <span>{held === 1 ? "1 picture from the web is" : `${held} pictures from the web are`} hidden to protect your privacy.</span>
+          <button className="btn" onClick={() => { if (ref.current) { releaseIn(ref.current); setHeld(0); } }}>Show pictures</button>
+        </div>
+      )}
       <div className="reading rich-scroll">
         <div className="ink-wrap" style={wrapStyle}>
           <div ref={ref} className="md rich-doc" contentEditable={!readOnly} suppressContentEditableWarning role="textbox" aria-multiline aria-label="Document"
@@ -144,7 +153,7 @@ export function RichEditor({ html, onChange, readOnly, toolbarless, children, wr
             onPaste={(e) => {
               const fs = Array.from(e.clipboardData.files); if (fs.length) { e.preventDefault(); addFiles(fs); return; }
               const h = e.clipboardData.getData("text/html");
-              if (h) { e.preventDefault(); insertHtml(cleanHtml(h)); }
+              if (h) { e.preventDefault(); const r = holdHtml(cleanHtml(h)); insertHtml(r.html); if (r.held) setHeld(countHeld(ref.current)); }
             }}
             onDrop={(e) => { const fs = Array.from(e.dataTransfer.files); if (fs.length) { e.preventDefault(); e.stopPropagation(); addFiles(fs); } }}
             onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); } }} />

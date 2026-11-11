@@ -1,5 +1,6 @@
 "use client";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { countHeld } from "@/lib/remote";
 import { renderMarkdown } from "@/lib/markdown";
 import { Note } from "@/lib/types";
 import { assetUrl, downloadAsset } from "@/lib/assets";
@@ -11,7 +12,10 @@ const srcOf = (n: HTMLElement) => (n.dataset.src ? decodeURIComponent(n.dataset.
 
 export function Preview({ body, notes = [], onOpenNote, onWikiLink, onToggleTask, className = "" }: { body: string; notes?: Note[]; onOpenNote?: (id: string) => void; onWikiLink?: (title: string) => void; onToggleTask?: (index: number) => void; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => renderMarkdown(body, notes) || '<p class="muted">Nothing to preview</p>', [body, notes]);
+  const [showWeb, setShowWeb] = useState(false); // "Show pictures" pressed for this note
+  const html = useMemo(() => renderMarkdown(body, notes, !showWeb) || '<p class="muted">Nothing to preview</p>', [body, notes, showWeb]);
+  const [held, setHeld] = useState(0);
+  useLayoutEffect(() => { setHeld(countHeld(ref.current)); }, [html]);
 
   // Edits (and mode switches) can replace the preview's DOM, which resets diagrams to their raw source until mermaid has
   // re-rendered them. So after every commit: find diagram nodes we haven't handled yet, put back cached SVGs before paint,
@@ -69,7 +73,8 @@ export function Preview({ body, notes = [], onOpenNote, onWikiLink, onToggleTask
     }, 400);
   });
 
-  return <div ref={ref} className={`md ${className}`}
+  return <>
+  <div ref={ref} className={`md ${className}`}
     onClick={(e) => {
       const file = (e.target as HTMLElement).closest<HTMLElement>("a[data-asset-file]");
       if (file) { e.preventDefault(); downloadAsset(file.dataset.assetFile!, file.textContent || "file"); return; }
@@ -80,5 +85,12 @@ export function Preview({ body, notes = [], onOpenNote, onWikiLink, onToggleTask
         onToggleTask(Array.from(ref.current!.querySelectorAll("input[data-task]")).indexOf(el)); return;
       }
       const id = el.closest<HTMLElement>("[data-sketch-id]")?.dataset.sketchId; if (id) onOpenNote?.(id);
-    }} dangerouslySetInnerHTML={{ __html: html }} />;
+    }} dangerouslySetInnerHTML={{ __html: html }} />
+  {held > 0 && (
+    <div className="remote-bar" role="status">
+      <span>{held === 1 ? "1 picture from the web is" : `${held} pictures from the web are`} hidden to protect your privacy (the website could see you opened this note).</span>
+      <button className="btn" onClick={() => setShowWeb(true)}>Show pictures</button>
+    </div>
+  )}
+  </>;
 }

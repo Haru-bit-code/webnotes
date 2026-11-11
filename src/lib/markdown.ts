@@ -5,6 +5,7 @@ import DOMPurify from "dompurify";
 import { renderChart, renderPlot } from "./charts";
 import { sketchHtml } from "./sketch";
 import { Note } from "./types";
+import { holdElement, remoteAllowed } from "./remote";
 
 let ctxNotes: Note[] = [];
 
@@ -54,18 +55,23 @@ const marked = new Marked(
   }
 );
 
-let hooked = false;
-export function renderMarkdown(src: string, notes: Note[] = []): string {
+let hooked = false, holding = false;
+/** `hold`: keep pictures from the web from loading (on-screen preview); exports and conversions keep real addresses */
+export function renderMarkdown(src: string, notes: Note[] = [], hold = false): string {
   ctxNotes = notes;
   if (!hooked) {
     DOMPurify.addHook("afterSanitizeAttributes", (n) => {
       if (n.tagName === "A" && (n.hasAttribute("data-wiki") || n.hasAttribute("data-asset-file"))) return;
       if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); }
+      if (holding) holdElement(n); // pictures from the web wait until the user allows them
     });
     hooked = true;
   }
   const html = marked.parse(src) as string;
-  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true }, ADD_TAGS: ["clipPath"], ADD_ATTR: ["target", "clip-path", "data-sketch-id", "data-src", "data-wiki", "data-task", "data-asset", "data-asset-file"] });
+  holding = hold && !remoteAllowed();
+  try {
+    return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true, svgFilters: true, mathMl: true }, ADD_TAGS: ["clipPath"], ADD_ATTR: ["target", "clip-path", "data-sketch-id", "data-src", "data-wiki", "data-task", "data-asset", "data-asset-file"] });
+  } finally { holding = false; }
 }
 
 // Flip the n-th task-list checkbox ("- [ ]" / "- [x]") in the source, skipping fenced code blocks.

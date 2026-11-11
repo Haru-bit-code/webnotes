@@ -1,0 +1,55 @@
+# Runs on every push and pull request:
+#   1. unit tests for the app's logic (npm test)
+#   2. a production build (also type-checks and lints)
+#   3. the browser tests: 13 user walkthroughs in Chromium (python tests/e2e/run.py)
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Build (type-check + lint)
+        run: npx next build
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: npm ci
+      - name: Build and start the app
+        run: |
+          npx next build
+          npx next start -p 3190 > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3190 > /dev/null && break; sleep 1; done
+      - name: Install the browser test tools
+        run: |
+          pip install playwright==1.63.0 python-docx openpyxl pypdf
+          python -m playwright install --with-deps chromium
+      - name: Browser tests
+        run: python tests/e2e/run.py
+      - name: Keep screenshots if something failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-output
+          path: |
+            tests/e2e/.out
+            server.log

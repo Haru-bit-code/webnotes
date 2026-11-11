@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "build:app": "BUILD_TARGET=app next build && cap sync android"
+    "build:app": "BUILD_TARGET=app next build && cap sync android",
+    "test": "vitest run",
+    "test:e2e": "python3 tests/e2e/run.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -47,7 +49,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/turndown": "^5.0.5",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

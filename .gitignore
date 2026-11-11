@@ -7,3 +7,7 @@ tsconfig.tsbuildinfo
 
 # static build for the Android app
 /out
+
+# browser test output
+tests/e2e/.out
+__pycache__

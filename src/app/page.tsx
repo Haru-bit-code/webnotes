@@ -12,6 +12,8 @@ import { Icon } from "@/components/Icon";
 import { NewPageDialog } from "@/components/NewPage";
 import { ImportDialog } from "@/components/ImportDialog";
 import { FORMATS, appendText, formatLabel, newNoteOf } from "@/lib/formats";
+import { setAllowRemote } from "@/lib/remote";
+import { DEFAULT_THEME, textOn } from "@/lib/themes";
 
 type View = { kind: "all" } | { kind: "scribbles" } | { kind: "archive" } | { kind: "trash" } | { kind: "folder"; name: string } | { kind: "tag"; name: string };
 
@@ -23,12 +25,14 @@ const FONTS = {
 };
 
 export default function Home() {
-  const { notes, settings, setSettings, ready, create, update, remove, restore, purge, emptyTrash, importNotes } = useNotes();
+  const { notes, settings, setSettings, ready, create, update, remove, restore, purge, emptyTrash, importNotes, conflicts, clearConflicts } = useNotes();
   const backup = useBackup(notes, ready, importNotes);
+  setAllowRemote(!!settings.remoteImages); // read while notes render, so it must be set before them
   const live = useMemo(() => notes.filter((n) => !n.deletedAt), [notes]); // everything except the trash
   const [view, setView] = useState<View>({ kind: "all" });
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [showNav, setShowNav] = useState(false); // phones: the sidebar as a slide-in drawer
   const [showSettings, setShowSettings] = useState(false);
   const [hideSide, setHideSide] = useState(false);
   const [hideList, setHideList] = useState(false);
@@ -60,6 +64,9 @@ export default function Home() {
     const mq = matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", apply);
     root.style.setProperty("--accent", settings.accent);
+    root.style.setProperty("--on-accent", textOn(settings.accent)); // button text stays readable on any accent
+    const glow = settings.glow ?? DEFAULT_THEME.glow;
+    root.style.setProperty("--accent-2", glow[0]); root.style.setProperty("--accent-3", glow[1]);
     root.classList.toggle("no-glass", settings.glass === false);
     root.style.setProperty("--font-body", FONTS[settings.font]);
     root.style.setProperty("--font-size", settings.fontSize + "px");
@@ -89,7 +96,7 @@ export default function Home() {
   const current = notes.find((n) => n.id === selected) ?? null;
   const isView = (v: View) => JSON.stringify(v) === JSON.stringify(view);
   const navItem = (v: View, label: string, icon: string, count?: number) => (
-    <button key={label} onClick={() => { setView(v); setSelected(null); }} aria-current={isView(v) ? "page" : undefined}
+    <button key={label} onClick={() => { setView(v); setSelected(null); setShowNav(false); }} aria-current={isView(v) ? "page" : undefined}
       className={`nav-item ${isView(v) ? "on" : ""}`}>
       <Icon name={icon} /><span className="flex-1 truncate">{label}</span>{count !== undefined && count > 0 && <span className="count">{count}</span>}
     </button>
@@ -102,6 +109,7 @@ export default function Home() {
   // Android app: the back button closes what's on top (dialog, menu, panel, open note) before leaving the app
   const onBack = useRef<() => boolean>(() => false);
   onBack.current = () => {
+    if (showNav) { setShowNav(false); return true; }
     if (importing) { setImporting(null); return true; }
     if (pickPaper) { setPickPaper(false); return true; }
     if (showSettings) { setShowSettings(false); return true; }
@@ -153,11 +161,12 @@ export default function Home() {
       onDragLeave={(e) => { if (e.currentTarget === e.target || !e.relatedTarget) setDragging(false); }}
       onDrop={(e) => { setDragging(false); const fs = Array.from(e.dataTransfer.files); if (fs.length) { e.preventDefault(); setImporting(fs); } }}>
       {dragging && <div className="drop-overlay" aria-hidden="true"><div><Icon name="upload" /><b>Drop to import</b><span>PDF, images, Word, PowerPoint, Excel, CSV, text and more</span></div></div>}
-      <aside className={`sidebar pane pane-1 hidden w-60 shrink-0 flex-col ${hideSide ? "" : "md:flex"}`}>
+      {showNav && <div className="drawer-scrim md:hidden" onClick={() => setShowNav(false)} aria-hidden="true" />}
+      <aside id="main-nav" className={`sidebar pane pane-1 w-60 shrink-0 flex-col ${showNav ? "drawer flex" : "hidden"} ${hideSide ? "" : "md:flex"}`} aria-label="Notebooks">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true"><Icon name="pen" /></span>
           <span className="brand-name">WebNotes</span>
-          <button className="btn icon-btn ghost ml-auto" aria-label="Settings" title="Settings" onClick={() => setShowSettings(true)}><Icon name="settings" /></button>
+          <button className="btn icon-btn ghost ml-auto" aria-label="Settings" title="Settings" onClick={() => { setShowNav(false); setShowSettings(true); }}><Icon name="settings" /></button>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
           {navItem({ kind: "all" }, "All notes", "notes", live.filter((n) => !n.archived).length)}
@@ -175,6 +184,7 @@ export default function Home() {
         <div className="list-head">
           <div className="flex items-center gap-2">
             {hideSide && <button className="btn icon-btn ghost hidden md:inline-flex" title="Show sidebar" aria-label="Show sidebar" onClick={() => setHideSide(false)}><Icon name="sidebar" /></button>}
+            <button className="btn icon-btn ghost md:hidden" aria-label="Open menu: Scribbles, folders, tags, Archive, Trash" aria-controls="main-nav" aria-expanded={showNav} onClick={() => setShowNav(true)}><Icon name="menu" /></button>
             <h1 className="list-title flex-1 truncate">{viewTitle}</h1>
             <button className="btn icon-btn ghost md:hidden" aria-label="Settings" onClick={() => setShowSettings(true)}><Icon name="settings" /></button>
             <div className="relative">
@@ -203,6 +213,12 @@ export default function Home() {
           </label>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-3">
+          {conflicts > 0 && (
+            <div className="notice my-2 rounded-lg text-xs" role="status">
+              <span className="flex-1">{conflicts === 1 ? "A note was" : `${conflicts} notes were`} changed in another tab or window at the same time. Both versions are kept: look for “(conflict copy)”.</span>
+              <button className="btn" onClick={clearConflicts}>OK</button>
+            </div>
+          )}
           {view.kind === "trash" && (
             <div className="notice my-2 rounded-lg text-xs">
               <span className="flex-1">Deleted notes are kept {TRASH_DAYS} days.</span>
@@ -233,7 +249,7 @@ export default function Home() {
           <div className="flex h-full flex-col">
             <div className="min-h-0 flex-1">
               <Editor key={current.id} note={current} folders={folders} notes={live}
-                extra={<button className={`btn ${showAI ? "btn-primary" : ""}`} title="AI assistant (⌘J)" onClick={() => setShowAI((v) => !v)}><Icon name="sparkle" /> AI</button>}
+                extra={<button className={`btn ${showAI ? "btn-primary" : ""}`} title="AI assistant (⌘J)" aria-label="AI assistant" onClick={() => setShowAI((v) => !v)}><Icon name="sparkle" /><span className="hidden sm:inline">AI</span></button>}
                 onOpenNote={(id) => { setBack(current.id); setSelected(id); }} onNewSketch={() => { const id = create({ kind: "canvas", drawing: [], title: "Sketch" }); return id; }}
                 leading={<>
                   <button className="btn icon-btn ghost md:hidden" aria-label="Back to list" onClick={() => setSelected(null)}><Icon name="back" /></button>

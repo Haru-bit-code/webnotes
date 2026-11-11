@@ -67,6 +67,7 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
   };
 
   const [showExport, setShowExport] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const fileName = (ext: string) => (note.title.trim() || "note").replace(/[^\w-]+/g, "_") + "." + ext;
   const doExport = async (kind: "md" | "docx" | "html" | "txt" | "code" | "xlsx" | "csv") => {
     setShowExport(false);
@@ -132,7 +133,7 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
           </>}
         </span>}
         {md && <div className="seg" role="radiogroup" aria-label="View mode">{(["edit", "split", "preview"] as Mode[]).map((m) => (
-          <button key={m} role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m[0].toUpperCase() + m.slice(1)}</button>
+          <button key={m} role="radio" data-mode={m} aria-checked={mode === m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m[0].toUpperCase() + m.slice(1)}</button>
         ))}</div>}
         {fmt === "code" && <>
           <select className="field w-auto" aria-label="Language" value={note.lang ?? "plaintext"} onChange={(e) => onChange({ lang: e.target.value })}>
@@ -155,11 +156,23 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
             </div>
           </>}
         </span>}
-        <button className={`btn icon-btn ghost ${note.pinned ? "accent-text" : ""}`} title={note.pinned ? "Unpin" : "Pin to top"} aria-pressed={note.pinned} onClick={() => onChange({ pinned: !note.pinned })}><Icon name="pin" /></button>
-        <button className="btn icon-btn ghost" title={note.archived ? "Unarchive" : "Archive"} aria-label={note.archived ? "Unarchive" : "Archive"} onClick={() => onChange({ archived: !note.archived })}><Icon name="archive" /></button>
+        <button className={`btn icon-btn ghost hidden md:inline-flex ${note.pinned ? "accent-text" : ""}`} title={note.pinned ? "Unpin" : "Pin to top"} aria-pressed={note.pinned} onClick={() => onChange({ pinned: !note.pinned })}><Icon name="pin" /></button>
+        <button className="btn icon-btn ghost hidden md:inline-flex" title={note.archived ? "Unarchive" : "Archive"} aria-label={note.archived ? "Unarchive" : "Archive"} onClick={() => onChange({ archived: !note.archived })}><Icon name="archive" /></button>
         {note.deletedAt
           ? <><button className="btn btn-primary" onClick={onRestore}>Restore</button><button className="btn btn-danger" onClick={() => confirm("Delete this note permanently? This cannot be undone.") && onPurge()}>Delete forever</button></>
-          : <button className="btn icon-btn ghost" title="Move to trash" aria-label="Move to trash" onClick={onDelete}><Icon name="trash" /></button>}
+          : <button className="btn icon-btn ghost hidden md:inline-flex" title="Move to trash" aria-label="Move to trash" onClick={onDelete}><Icon name="trash" /></button>}
+        {!note.deletedAt && <span className="relative md:hidden">
+          {/* phones: occasional actions live in one menu so the bar fits on one row */}
+          <button className="btn icon-btn ghost" aria-label="More actions" aria-haspopup="menu" aria-expanded={showMore} onClick={() => setShowMore((v) => !v)}><Icon name="more" /></button>
+          {showMore && <>
+            <div className="fixed inset-0 z-30" onClick={() => setShowMore(false)} />
+            <div className="menu right-0 w-56" role="menu">
+              <button role="menuitem" className="menu-item compact" onClick={() => { onChange({ pinned: !note.pinned }); setShowMore(false); }}><Icon name="pin" /><span>{note.pinned ? "Unpin" : "Pin to top"}</span></button>
+              <button role="menuitem" className="menu-item compact" onClick={() => { onChange({ archived: !note.archived }); setShowMore(false); }}><Icon name="archive" /><span>{note.archived ? "Unarchive" : "Archive"}</span></button>
+              <button role="menuitem" className="menu-item compact" onClick={() => { setShowMore(false); onDelete(); }}><Icon name="trash" /><span>Move to trash</span></button>
+            </div>
+          </>}
+        </span>}
         {extra}
       </div>
       {note.deletedAt && <div className="notice">This note is in the trash. Restore it to edit.</div>}

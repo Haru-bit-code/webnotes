@@ -59,7 +59,9 @@ export type Note = {
 export type Settings = {
   theme: "light" | "dark" | "system";
   accent: string;
-  glass?: boolean;   // frosted-glass panels (false = solid)
+  glass?: boolean;
+  glow?: [string, string]; // the two other colours of the background glow (from a theme preset)
+  remoteImages?: boolean; // load pictures from the web without asking (default: ask)   // frosted-glass panels (false = solid)
   font: "sans" | "serif" | "mono" | "hand";
   newFormat?: NoteFormat;
   fontSize: number;

@@ -113,8 +113,8 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
       <div className="bd flex items-center gap-1 border-b px-3 py-2">
         <span className="accent-text font-semibold">✨ Assistant</span>
         <span className="ml-auto" />
-        <button className={`btn ${showCfg || !hasKey ? "accent-bg" : ""}`} title="AI settings" onClick={() => setShowCfg((v) => !v)}>⚙</button>
-        <button className="btn" title="Hide (⌘J)" onClick={onClose}>✕</button>
+        <button className={`btn ${showCfg || !hasKey ? "accent-bg" : ""}`} title="Assistant settings" aria-label="Assistant settings" aria-expanded={showCfg || !hasKey} onClick={() => setShowCfg((v) => !v)}>⚙</button>
+        <button className="btn" title="Close assistant (⌘J)" aria-label="Close assistant" onClick={onClose}>✕</button>
       </div>
 
       {(showCfg || !hasKey) && (
@@ -155,10 +155,14 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
               </div></div>
             {revMsg && <p className="muted text-xs">{revMsg}</p>}
           </div>
-          <label className="flex items-center justify-between gap-2"><span>Auto-review when I pause typing</span>
-            <input type="checkbox" checked={ai.autoReview} onChange={(e) => setAI({ ...ai, autoReview: e.target.checked })} /></label>
-          <label className="flex items-center justify-between gap-2"><span>Let it read my other notes</span>
-            <input type="checkbox" checked={ai.includeAll} onChange={(e) => setAI({ ...ai, includeAll: e.target.checked })} /></label>
+          <fieldset className="ai-access">
+            <legend>What the assistant can see</legend>
+            <p className="muted text-xs">By default it only reads the note you have open, and only when you ask. Your notes are sent to the AI company you picked above.</p>
+            <label className="ai-opt"><input type="checkbox" checked={ai.autoReview} onChange={(e) => setAI({ ...ai, autoReview: e.target.checked, consent: 1 })} />
+              <span><b>Review automatically when I pause typing</b><small>Sends the open note to {resolve(ai, "review").info.label} in the background each time you stop typing. Uses your API credit.</small></span></label>
+            <label className="ai-opt"><input type="checkbox" checked={ai.includeAll} onChange={(e) => setAI({ ...ai, includeAll: e.target.checked, consent: 1 })} />
+              <span><b>Let it read my other notes too</b><small>Adds the text of your other notes (newest first, up to the Notes context size) to every request, so it can connect ideas across notes. Archived notes are never sent.</small></span></label>
+          </fieldset>
           <p className="muted text-xs">Now: chat → {resolve(ai, "chat").info.label} · {resolve(ai, "chat").cfg.model || "no model"}; insights → {resolve(ai, "review").info.label} · {resolve(ai, "review").cfg.model || "no model"}. Used this session: {usage.input.toLocaleString()} in ({usage.cached.toLocaleString()} cached) · {usage.output.toLocaleString()} out tokens (some providers don&apos;t report usage).</p>
         </div>
       )}
@@ -208,6 +212,7 @@ export function AIPanel({ ai, setAI, notes, note, onInsert, onClose }: {
             {QUICK.map(([l, q]) => <button key={l} className="btn" disabled={!hasKey || busy === "chat"} onClick={() => send(q)}>{l}</button>)}
             {msgs.length > 0 && <button className="btn" onClick={() => setChats((p) => ({ ...p, [id]: [] }))}>Clear</button>}
           </div>
+          <p className="ai-scope muted" aria-live="polite">Sends to {resolve(ai, "chat").info.label}: {note ? `“${note.title || "Untitled"}”` : "no note"}{ai.includeAll && resolve(ai, "chat").cfg.ctxChars > 0 ? " + your other notes" : " only"}</p>
           <div className="bd flex gap-1 border-t p-2">
             <textarea rows={2} className="bd min-w-0 flex-1 resize-none rounded border px-2 py-1" placeholder={hasKey ? "Ask a question… (⌘/Ctrl+Enter)" : "Set up a provider in ⚙ first"} disabled={!hasKey}
               value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(draft); } }} />

@@ -3,7 +3,7 @@ import { El, Note } from "./types";
 
 export type ProviderId = "anthropic" | "groq" | "openrouter" | "openai" | "gemini" | "together" | "mistral" | "ollama" | "custom";
 export type ProviderCfg = { apiKey: string; model: string; baseUrl: string; ctxChars: number };
-export type AISettings = { chat: ProviderId; review: ProviderId | "same"; reviewModel: string; providers: Record<ProviderId, ProviderCfg>; autoReview: boolean; includeAll: boolean };
+export type AISettings = { chat: ProviderId; review: ProviderId | "same"; reviewModel: string; providers: Record<ProviderId, ProviderCfg>; autoReview: boolean; includeAll: boolean; consent?: number };
 
 type ProviderInfo = { label: string; kind: "anthropic" | "openai"; baseUrl: string; models: string[]; needsKey: boolean; keyUrl: string; hint: string; ctx: number };
 // Model names change often – use "Fetch models" in settings to see what your key can use.
@@ -26,7 +26,7 @@ export const PROVIDER_IDS = Object.keys(PROVIDERS) as ProviderId[];
 
 const blankCfg = (id: ProviderId): ProviderCfg => ({ apiKey: "", model: PROVIDERS[id].models[0] ?? "", baseUrl: PROVIDERS[id].baseUrl, ctxChars: PROVIDERS[id].ctx });
 export const defaultAI: AISettings = {
-  chat: "anthropic", review: "same", reviewModel: "", autoReview: true, includeAll: true,
+  chat: "anthropic", review: "same", reviewModel: "", autoReview: false, includeAll: false, consent: 1, // nothing is sent in the background and other notes stay private unless the user turns these on
   providers: Object.fromEntries(PROVIDER_IDS.map((id) => [id, blankCfg(id)])) as Record<ProviderId, ProviderCfg>,
 };
 
@@ -35,8 +35,11 @@ export function normalizeAI(raw: unknown): AISettings {
   const r = (raw ?? {}) as Record<string, unknown>;
   const out: AISettings = { ...defaultAI, providers: { ...defaultAI.providers } };
   if (typeof r.apiKey === "string") { out.providers.anthropic = { ...out.providers.anthropic, apiKey: r.apiKey, model: (r.model as string) || out.providers.anthropic.model }; }
-  if (typeof r.autoReview === "boolean") out.autoReview = r.autoReview;
-  if (typeof r.includeAll === "boolean") out.includeAll = r.includeAll;
+  // these two used to be on by default; settings saved before they became opt-in (no "consent" mark) start off
+  if (r.consent === 1) {
+    if (typeof r.autoReview === "boolean") out.autoReview = r.autoReview;
+    if (typeof r.includeAll === "boolean") out.includeAll = r.includeAll;
+  }
   if (typeof r.chat === "string" && r.chat in PROVIDERS) out.chat = r.chat as ProviderId;
   if (typeof r.review === "string" && (r.review === "same" || r.review in PROVIDERS)) out.review = r.review as AISettings["review"];
   if (typeof r.reviewModel === "string") out.reviewModel = r.reviewModel;

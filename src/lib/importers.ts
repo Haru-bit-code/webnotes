@@ -147,7 +147,7 @@ export async function htmlToMd(html: string) {
   doc.querySelectorAll("table").forEach((t) => {
     if (t.querySelector("th")) return;
     const first = t.querySelector("tr"); if (!first) return;
-    first.querySelectorAll("td").forEach((td) => { const th = doc.createElement("th"); th.innerHTML = td.textContent?.trim() ?? ""; td.replaceWith(th); });
+    first.querySelectorAll("td").forEach((td) => { const th = doc.createElement("th"); th.textContent = td.textContent?.trim() ?? ""; td.replaceWith(th); });
     const thead = doc.createElement("thead"); thead.appendChild(first); t.insertBefore(thead, t.firstChild);
   });
   doc.querySelectorAll("img[data-asset]").forEach((img) => img.setAttribute("src", "asset:" + img.getAttribute("data-asset")));

@@ -63,7 +63,7 @@ export function cleanHtml(html: string) {
   } finally { richMode = false; }
 }
 export function htmlText(html: string) {
-  const d = document.createElement("div"); d.innerHTML = html;
+  const t = document.createElement("template"); t.innerHTML = html; const d = t.content; // inert: nothing loads or runs
   d.querySelectorAll("br").forEach((b) => b.replaceWith("\n"));
   d.querySelectorAll("p,div,li,h1,h2,h3,h4,h5,h6,tr,blockquote,pre").forEach((b) => b.append("\n"));
   d.querySelectorAll("td,th").forEach((c) => c.append("\t"));
@@ -84,7 +84,7 @@ function mdTables(md: string): string[][][] {
   return out;
 }
 function htmlTables(html: string): string[][][] {
-  const d = document.createElement("div"); d.innerHTML = html;
+  const t = document.createElement("template"); t.innerHTML = html; const d = t.content; // inert: nothing loads or runs
   return Array.from(d.querySelectorAll("table")).map((t) => Array.from(t.querySelectorAll("tr")).map((tr) => Array.from(tr.querySelectorAll("td,th")).map((c) => (c.textContent ?? "").trim())));
 }
 const pad = (rows: string[][], minRows = 20, minCols = 8) => {
