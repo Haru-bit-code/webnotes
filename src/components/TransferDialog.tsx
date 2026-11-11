@@ -207,7 +207,13 @@ function Receive({ initialCode, onImport, onFolders }: { initialCode?: string; o
 /** camera view that reads QR codes (the browser's own reader where there is one, else jsQR) */
 function Scanner({ onText, onClose, frames }: { onText: (t: string) => Promise<boolean>; onClose: () => void; frames: { have: number; n: number } | null }) {
   const video = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<null | { min: number; max: number; step: number; value: number }>(null);
+  const setCameraZoom = (value: number) => {
+    setZoom((z) => (z ? { ...z, value } : z));
+    trackRef.current?.applyConstraints({ advanced: [{ zoom: value } as MediaTrackConstraintSet] }).catch(() => {});
+  };
   useEffect(() => {
     let stream: MediaStream | null = null, stopped = false, timer: ReturnType<typeof setTimeout> | null = null;
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -223,7 +229,7 @@ function Scanner({ onText, onClose, frames }: { onText: (t: string) => Promise<b
           if (detector) text = (await detector.detect(v))[0]?.rawValue ?? null;
           else if (ctx) {
             jsQR ??= (await import("jsqr")).default as never;
-            const w = v.videoWidth, h = v.videoHeight, k = Math.min(1, 720 / Math.max(w, h));
+            const w = v.videoWidth, h = v.videoHeight, k = Math.min(1, 1080 / Math.max(w, h)); // enough detail for a small code seen from further away
             canvas.width = w * k; canvas.height = h * k; ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
             text = jsQR!(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)?.data ?? null;
           }
@@ -232,16 +238,30 @@ function Scanner({ onText, onClose, frames }: { onText: (t: string) => Promise<b
       }
       timer = setTimeout(tick, 90);
     };
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } }, audio: false })
-      .then((s) => { stream = s; if (video.current) { video.current.srcObject = s; video.current.play().catch(() => {}); } tick(); })
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false })
+      .then(async (s) => {
+        stream = s; if (video.current) { video.current.srcObject = s; video.current.play().catch(() => {}); }
+        // start fully zoomed out with continuous focus, so a code can be read from close up; offer a zoom slider where the camera has one
+        const track = s.getVideoTracks()[0];
+        const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { zoom?: { min: number; max: number; step: number }; focusMode?: string[] };
+        const adv: Record<string, unknown> = {};
+        if (caps.focusMode?.includes("continuous")) adv.focusMode = "continuous";
+        if (caps.zoom && caps.zoom.max > caps.zoom.min) { adv.zoom = caps.zoom.min; setZoom({ min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1, value: caps.zoom.min }); }
+        if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv as MediaTrackConstraintSet] }).catch(() => {});
+        trackRef.current = track;
+        tick();
+      })
       .catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Camera access was blocked. Allow the camera for WebNotes in the browser or phone settings, or type the code instead." : e.name === "NotFoundError" ? "No camera found on this device. Type the code instead." : "The camera couldn't start: " + e.message));
     return () => { stopped = true; if (timer) clearTimeout(timer); stream?.getTracks().forEach((t) => t.stop()); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="scanner">
       {err ? <div className="status-line bad"><span className="dot" />{err}</div> : <>
-        <video ref={video} playsInline muted aria-label="Camera view for scanning" />
-        <div className="scan-frame" aria-hidden="true" />
+        <div className="scan-view">
+          <video ref={video} playsInline muted aria-label="Camera view for scanning" />
+          <div className="scan-frame" aria-hidden="true" />
+        </div>
+        {zoom && <label className="ink-check text-xs scan-zoom">Zoom <input type="range" min={zoom.min} max={zoom.max} step={zoom.step} value={zoom.value} onChange={(e) => setCameraZoom(+e.target.value)} aria-label="Camera zoom" /></label>}
         <p className="scan-hint">{frames ? `Reading animated QR… ${frames.have} of ${frames.n} parts` : "Point the camera at the QR code on the other device"}</p>
         {frames && <progress max={frames.n} value={frames.have} aria-label="Animated QR progress" />}
       </>}

@@ -694,8 +694,10 @@ kbd { background: var(--chip); border-color: var(--glass-line); }
 .received-list li { display: flex; align-items: center; gap: 8px; list-style: none; font-size: 13px; }
 .received-list .ico { width: 14px; height: 14px; color: var(--accent); }
 .scanner { position: relative; display: flex; flex-direction: column; gap: 10px; }
-.scanner video { width: 100%; max-height: 360px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 16px; background: #000; }
-.scan-frame { position: absolute; left: 50%; top: 180px; width: 200px; height: 200px; margin: -100px 0 0 -100px; border-radius: 18px; box-shadow: 0 0 0 2px rgba(255,255,255,.85), 0 0 0 9999px rgba(0,0,0,.25); pointer-events: none; }
-@media (max-width: 640px) { .scan-frame { top: 140px; width: 160px; height: 160px; margin: -80px 0 0 -80px; } }
+/* the whole camera picture, not a cropped (zoomed-looking) part of it; the guide is only a hint, the full picture is read */
+.scan-view { position: relative; display: flex; justify-content: center; border-radius: 16px; overflow: hidden; background: #000; }
+.scanner video { display: block; width: 100%; height: auto; max-height: 58vh; object-fit: contain; }
+.scan-frame { position: absolute; left: 50%; top: 50%; height: 58%; aspect-ratio: 1; max-width: 78%; transform: translate(-50%, -50%); border-radius: 18px; box-shadow: 0 0 0 2px rgba(255,255,255,.8); pointer-events: none; }
+.scan-zoom { display: flex; align-items: center; gap: 10px; } .scan-zoom input { flex: 1; accent-color: var(--accent); }
 .scan-hint { font-size: 13px; color: var(--muted); text-align: center; }
 .modal.transfer fieldset .ink-check { display: flex; width: 100%; padding: 3px 0; color: var(--text); font-size: 14px; }
