@@ -2,7 +2,7 @@ import asyncio, json
 from playwright.async_api import async_playwright
 from _common import BASE, FIXTURES, OUT, ok  # noqa: E402  (shared setup: server address, sample files, output folder)
 
-async def cur(pg): return (await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes'))"))[0]
+async def cur(pg): await pg.wait_for_timeout(120); return (await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes'))"))[0]
 async def select_word(pg, word):
     await pg.evaluate("""w=>{const d=document.querySelector('.rich-doc');const it=document.createTreeWalker(d,NodeFilter.SHOW_TEXT);let n;while(n=it.nextNode()){const i=n.data.indexOf(w);if(i>=0){const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+w.length);const s=getSelection();s.removeAllRanges();s.addRange(r);return}}}""", word)
 async def main():

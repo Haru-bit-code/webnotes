@@ -3,7 +3,7 @@ from playwright.async_api import async_playwright
 from _common import BASE, FIXTURES, OUT, ok  # noqa: E402  (shared setup: server address, sample files, output folder)
 
 F, D = FIXTURES, OUT
-async def notes(pg): return await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes')||'[]')")
+async def notes(pg): await pg.wait_for_timeout(120); return await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes')||'[]')")
 async def cur(pg): return (await notes(pg))[0]
 async def new(pg, label):
     await pg.click(".list-head button:has-text('New')"); await pg.click(f".new-menu .menu-item:has(b:text-matches('^{label}'))"); await pg.wait_for_timeout(500)

@@ -2,7 +2,7 @@ import asyncio
 from playwright.async_api import async_playwright
 from _common import BASE, FIXTURES, OUT, ok  # noqa: E402  (shared setup: server address, sample files, output folder)
 
-async def notes(pg): return await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes')||'[]')")
+async def notes(pg): await pg.wait_for_timeout(120); return await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes')||'[]')")
 async def new_md(pg, title, body):
     await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has(b:text-matches('^Markdown'))"); await pg.wait_for_timeout(300)
     await pg.fill("input[aria-label='Note title']", title); await pg.click("[role=radio]:text-is('Edit')"); await pg.fill("textarea.source", body); await pg.wait_for_timeout(200)

@@ -3,7 +3,7 @@ from playwright.async_api import async_playwright
 from _common import BASE, FIXTURES, OUT, ok  # noqa: E402  (shared setup: server address, sample files, output folder)
 
 F=FIXTURES
-async def notes(pg): return await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes')||'[]')")
+async def notes(pg): await pg.wait_for_timeout(120); return await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes')||'[]')")
 async def asset_count(pg): return await pg.evaluate("new Promise(r=>{const q=indexedDB.open('webnotes-assets',1);q.onupgradeneeded=()=>q.result.createObjectStore('files',{keyPath:'id'});q.onsuccess=()=>{const g=q.result.transaction('files').objectStore('files').getAll();g.onsuccess=()=>r(g.result.map(a=>[a.id,a.size]))}})")
 async def main():
   async with async_playwright() as p:
