@@ -11,7 +11,7 @@ import os, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITES = ["walkthrough", "templates", "write_on_templates", "imports", "overlay", "note_types", "colours",
-          "themes", "folders", "transfer", "two_tabs", "backup_restore", "ai_privacy", "web_pictures", "security_policy", "phone"]
+          "themes", "folders", "share_note", "transfer", "two_tabs", "backup_restore", "ai_privacy", "web_pictures", "security_policy", "phone"]
 
 def main(names):
     total_pass = total_fail = 0; broken = []

@@ -13,6 +13,19 @@ const toBase64 = (blob: Blob) => new Promise<string>((ok, fail) => {
   r.readAsDataURL(blob);
 });
 
+/** hand a file to another app: the share sheet where there is one (Android app, phone browsers), else a download */
+export async function shareFile(blob: Blob, name: string, title = name) {
+  const safe = name.replace(/[\\/:*?"<>|]+/g, "_") || "file";
+  if (isApp()) return saveFile(blob, safe);
+  const file = new File([blob], safe, { type: blob.type });
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  if (nav.share && nav.canShare?.({ files: [file] })) {
+    try { await nav.share({ files: [file], title }); return; }
+    catch (e) { if ((e as Error).name === "AbortError") return; } // closed the share sheet
+  }
+  return saveFile(blob, safe);
+}
+
 export async function saveFile(blob: Blob, name: string) {
   const safe = name.replace(/[\\/:*?"<>|]+/g, "_") || "file";
   if (!isApp()) {

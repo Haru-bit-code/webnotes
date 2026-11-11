@@ -4,7 +4,7 @@ import { Note } from "@/lib/types";
 import { Preview } from "./Preview";
 import { Canvas, bbox } from "./Canvas";
 import { putAsset, fmtSize } from "@/lib/assets";
-import { download, noteToDocx, noteToHtml } from "@/lib/exporters";
+import { download as saveDownload, noteToDocx, noteToHtml } from "@/lib/exporters";
 import { SNIPPETS } from "@/lib/templates";
 import { backlinksTo, toggleTask } from "@/lib/markdown";
 import { Icon } from "./Icon";
@@ -14,7 +14,7 @@ import { FORMATS, LANGS, LANG_EXT, convertNote, formatOf } from "@/lib/formats";
 import { sheetsText } from "@/lib/sheet";
 import { NoteFormat } from "@/lib/types";
 import hljs from "highlight.js/lib/common";
-import { saveFile } from "@/lib/save";
+import { saveFile, shareFile } from "@/lib/save";
 
 type Mode = "edit" | "split" | "preview";
 
@@ -68,9 +68,11 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
 
   const [showExport, setShowExport] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const fileName = (ext: string) => (note.title.trim() || "note").replace(/[^\w-]+/g, "_") + "." + ext;
-  const doExport = async (kind: "md" | "docx" | "html" | "txt" | "code" | "xlsx" | "csv") => {
-    setShowExport(false);
+  const doExport = async (kind: "md" | "docx" | "html" | "txt" | "code" | "xlsx" | "csv", share = false) => {
+    setShowExport(false); setShowShare(false);
+    const download = (b: Blob, name: string) => (share ? shareFile(b, name, note.title || "Note") : saveDownload(b, name));
     try {
       // documents and spreadsheets go through Markdown/HTML for Word and web export
       const asMd = async () => fmt === "rich" ? (await import("@/lib/importers")).htmlToMd(note.html ?? "") : fmt === "sheet" ? (await import("@/lib/formats")).sheetsToMd(note.sheets ?? []) : fmt === "code" ? "```" + (note.lang ?? "") + "\n" + note.body + "\n```" : note.body;
@@ -153,11 +155,22 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
             <div className="fixed inset-0 z-30" onClick={() => setShowExport(false)} />
             <div className="menu right-0 w-56">
               {exportsFor.map(([k, label, hint]) => <button key={k} className="menu-item" onClick={() => doExport(k)}><Icon name="download" /><span><b>{label}</b><small>{hint}</small></span></button>)}
-              {onSend && <button className="menu-item" onClick={() => { setShowExport(false); onSend(); }}><Icon name="qr" /><span><b>Send to another device</b><small>QR code or a short code, encrypted</small></span></button>}
             </div>
           </>}
         </span>}
-        {note.kind === "canvas" && onSend && !note.deletedAt && <button className="btn icon-btn ghost hidden md:inline-flex" title="Send to another device" aria-label="Send to another device" onClick={onSend}><Icon name="qr" /></button>}
+        {!note.deletedAt && <span className="relative">
+          {/* share this one note: to another device with a QR code, or as a file to any app */}
+          <button className="btn share-btn" aria-haspopup="menu" aria-expanded={showShare} title="Share this note" aria-label="Share this note" onClick={() => setShowShare((v) => !v)}><Icon name="share" /><span className="hidden sm:inline">Share</span></button>
+          {showShare && <>
+            <div className="fixed inset-0 z-30" onClick={() => setShowShare(false)} />
+            <div className="menu right-0 w-64" role="menu">
+              <div className="nav-group">Share “{note.title || "Untitled"}”</div>
+              {onSend && <button role="menuitem" className="menu-item" onClick={() => { setShowShare(false); onSend(); }}><Icon name="qr" /><span><b>Send with a QR code</b><small>To your other device or a friend nearby, encrypted</small></span></button>}
+              {note.kind === "doc" && <button role="menuitem" className="menu-item" onClick={() => doExport(exportsFor[0][0], true)}><Icon name="share" /><span><b>Share as a file</b><small>{exportsFor[0][1]} to WhatsApp, email, Drive…</small></span></button>}
+              {note.kind === "canvas" && <p className="muted px-3 pb-2 text-xs">To share it as a picture or PDF, use Export in the page&apos;s ⋯ menu.</p>}
+            </div>
+          </>}
+        </span>}
         <button className={`btn icon-btn ghost hidden md:inline-flex ${note.pinned ? "accent-text" : ""}`} title={note.pinned ? "Unpin" : "Pin to top"} aria-pressed={note.pinned} onClick={() => onChange({ pinned: !note.pinned })}><Icon name="pin" /></button>
         <button className="btn icon-btn ghost hidden md:inline-flex" title={note.archived ? "Unarchive" : "Archive"} aria-label={note.archived ? "Unarchive" : "Archive"} onClick={() => onChange({ archived: !note.archived })}><Icon name="archive" /></button>
         {note.deletedAt
@@ -171,7 +184,6 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
             <div className="menu right-0 w-56" role="menu">
               <button role="menuitem" className="menu-item compact" onClick={() => { onChange({ pinned: !note.pinned }); setShowMore(false); }}><Icon name="pin" /><span>{note.pinned ? "Unpin" : "Pin to top"}</span></button>
               <button role="menuitem" className="menu-item compact" onClick={() => { onChange({ archived: !note.archived }); setShowMore(false); }}><Icon name="archive" /><span>{note.archived ? "Unarchive" : "Archive"}</span></button>
-              {onSend && <button role="menuitem" className="menu-item compact" onClick={() => { setShowMore(false); onSend(); }}><Icon name="qr" /><span>Send to another device</span></button>}
               <button role="menuitem" className="menu-item compact" onClick={() => { setShowMore(false); onDelete(); }}><Icon name="trash" /><span>Move to trash</span></button>
             </div>
           </>}

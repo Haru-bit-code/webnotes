@@ -434,7 +434,7 @@ svg.touch-none { -webkit-touch-callout: none; -webkit-user-select: none; user-se
   --accent-3: #38bdf8;
   --glass: rgba(255, 255, 255, .56);
   --glass-strong: rgba(255, 255, 255, .8);
-  --glass-pop: rgba(255, 255, 255, .8);
+  --glass-pop: rgba(255, 255, 255, .94);
   --glass-edge: rgba(255, 255, 255, .78);
   --glass-line: rgba(22, 26, 48, .07);
   --glass-hover: rgba(22, 26, 48, .045);
@@ -454,7 +454,7 @@ svg.touch-none { -webkit-touch-callout: none; -webkit-user-select: none; user-se
   --text: #eceef5; --muted: #9399ad;
   --glass: rgba(28, 30, 46, .5);
   --glass-strong: rgba(19, 21, 33, .74);
-  --glass-pop: rgba(30, 32, 47, .82);
+  --glass-pop: rgba(30, 32, 47, .95);
   --glass-edge: rgba(255, 255, 255, .075);
   --glass-line: rgba(255, 255, 255, .065);
   --glass-hover: rgba(255, 255, 255, .05);
@@ -699,3 +699,5 @@ kbd { background: var(--chip); border-color: var(--glass-line); }
 @media (max-width: 640px) { .scan-frame { top: 140px; width: 160px; height: 160px; margin: -80px 0 0 -80px; } }
 .scan-hint { font-size: 13px; color: var(--muted); text-align: center; }
 .modal.transfer fieldset .ink-check { display: flex; width: 100%; padding: 3px 0; color: var(--text); font-size: 14px; }
+.share-btn { gap: 6px; }
+@media (max-width: 767px) { .share-btn { width: 40px; padding: 0; } }

@@ -91,7 +91,7 @@ async def main():
 
             # 3. opening the QR link (what a phone camera app does)
             await A.click(".modal button:has-text('Done'), .modal button:has-text('Cancel')"); await A.click(".modal [aria-label='Close']")
-            await A.locator(".note-card:has-text('Shopping')").click(); await A.click("[aria-label='Download as']"); await A.click(".menu-item:has-text('Send to another device')")
+            await A.locator(".note-card:has-text('Shopping')").click(); await A.click("[aria-label='Share this note']"); await A.click(".menu-item:has-text('Send with a QR code')")
             await A.wait_for_timeout(200)
             ok("a note can be sent on its own", await A.locator(".modal label:has-text('This note') input").is_checked())
             await A.click(".modal button:has-text('Show QR code')"); await A.wait_for_selector(".status-line:has-text('Waiting')", timeout=20000)
