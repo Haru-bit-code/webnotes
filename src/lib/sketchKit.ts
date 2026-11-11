@@ -62,7 +62,7 @@ export function sketch() {
         if (i) push("line", { x, y: ry, x2: x + w, y2: ry, w: 2.2, sk: 0.4 });
         push("ellipse", { x: x + 18, y: ry + rh / 2 - 13, x2: x + 44, y2: ry + rh / 2 + 13, sk: 0.7, w: 1.6 });
         const n = String(start + i); text(x + 31 - n.length * 4.2, ry + rh / 2 + 6, n, { fs: 15 });
-        r.split("\n").forEach((l, j) => text(x + 74, ry + 27 + j * 20, l, { fs: 15, c }));
+        if (r) r.split("\n").forEach((l, j) => text(x + 74, ry + 27 + j * 20, l, { fs: 15, c }));
       });
     },
     /** table with a yellow header row and ✔ / ✘ cells */
@@ -82,7 +82,7 @@ export function sketch() {
         let colX = x;
         row.forEach((v, i) => {
           if (typeof v === "boolean") text(colX + widths[i] / 2 - 7, ry + rh - 10, v ? "✔" : "✘", { fs: 17, c: v ? COL.green : COL.red, font: "ui" });
-          else text(colX + 10, ry + rh - 11, v, { fs: 14 });
+          else if (v) text(colX + 10, ry + rh - 11, v, { fs: 14 });
           colX += widths[i];
         });
       });

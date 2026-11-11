@@ -53,6 +53,18 @@ function moveEl(e: El, dx: number, dy: number): El {
     ...(e.pts && { pts: e.pts.map(([x, y]) => [x + dx, y + dy] as Pt) }) };
 }
 
+function scaleEl(e: El, ax: number, ay: number, k: number): El {
+  const fx = (v: number) => ax + (v - ax) * k, fy = (v: number) => ay + (v - ay) * k;
+  return {
+    ...e, x: fx(e.x), y: fy(e.y),
+    ...(e.x2 !== undefined && { x2: fx(e.x2), y2: fy(e.y2!) }),
+    ...(e.pts && { pts: e.pts.map(([a, b]) => [fx(a), fy(b)] as Pt) }),
+    ...(e.rc && { rc: [fx(e.rc[0]), fy(e.rc[1])] as Pt }),
+    ...(e.fs && { fs: Math.max(6, e.fs * k) }),
+    ...(e.dx !== undefined && { dx: e.dx * k }), ...(e.dy !== undefined && { dy: e.dy * k }),
+  };
+}
+
 // ---- hand-drawn ("sketch") rendering via rough.js, deterministic per element id ----
 const gen = rough.generator();
 const roughCache = new Map<string, { d: string; fill: boolean }[]>();
@@ -146,8 +158,9 @@ function ShapeBody({ e }: { e: El }) {
     case "diamond": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h / 2}L${b.x + b.w / 2} ${b.y + b.h}L${b.x} ${b.y + b.h / 2}Z`} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
     case "triangle": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h}L${b.x} ${b.y + b.h}Z`} {...common} fill="transparent" />;
     case "text":
-      return <text x={e.x} y={e.y} fontSize={e.fs || 20} fill={s} fontFamily={FONTS[e.font ?? ""] ?? "'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif"} fontWeight={e.bold ? 700 : undefined} style={{ whiteSpace: "pre" }}>
-        {(e.text || "").split("\n").map((l, i) => <tspan key={i} x={e.x} dy={i ? (e.fs || 20) * 1.3 : 0}>{l}</tspan>)}</text>;
+      return <g><rect x={b.x - 4} y={b.y - 2} width={Math.max(b.w, 24) + 8} height={b.h + 4} fill="transparent" />
+        <text x={e.x} y={e.y} fontSize={e.fs || 20} fill={s} fontFamily={FONTS[e.font ?? ""] ?? "'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif"} fontWeight={e.bold ? 700 : undefined} style={{ whiteSpace: "pre" }}>
+        {(e.text || "").split("\n").map((l, i) => <tspan key={i} x={e.x} dy={i ? (e.fs || 20) * 1.3 : 0}>{l}</tspan>)}</text></g>;
     case "axes": {
       const x0 = b.x + 24, y0 = b.y + b.h - 24, ticks: React.ReactNode[] = [];
       for (let x = x0 + 40; x < b.x + b.w - 8; x += 40) ticks.push(<line key={"x" + x} x1={x} x2={x} y1={y0 - 4} y2={y0 + 4} {...common} strokeWidth={1} />);
@@ -310,22 +323,45 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [snapPrev, setSnapPrev] = useState<Snap | null>(null);
   const stab = useRef<Pt>([0, 0]);
-  const [textBox, setTextBox] = useState<{ id?: string; x: number; y: number; value: string; fs?: number; font?: El["font"] } | null>(null);
+  // text being typed: x/y is the left end of the first line's baseline, in world units
+  const [textBox, setTextBox] = useState<{ id?: string; x: number; y: number; value: string; fs: number; font?: El["font"]; bold?: boolean; c: string; g?: string; rot?: number; rc?: Pt } | null>(null);
+  const lastPt = useRef<Pt | null>(null);       // where the page was last clicked: typing starts here
+  const active = useRef(false);                 // keyboard goes to the page only after it was clicked
+  const rootRef = useRef<HTMLDivElement>(null);
+  const clip = useRef<{ els: El[]; marker: string } | null>(null);
   const past = useRef<El[][]>([]);
   const future = useRef<El[][]>([]);
   const elsRef = useRef(els); elsRef.current = els;
   const drawRef = useRef<El | null>(null);
-  const drag = useRef<null | { mode: "draw" | "pan" | "move" | "erase" | "marquee"; sx: number; sy: number; last: Pt; snap?: El[]; moved?: boolean }>(null);
+  const drag = useRef<null | { mode: "draw" | "pan" | "move" | "erase" | "marquee" | "scale"; sx: number; sy: number; last: Pt; snap?: El[]; moved?: boolean; editOnUp?: string; box?: { x: number; y: number; w: number; h: number }; ids?: string[] }>(null);
   const widthSnap = useRef<El[] | null>(null);
   const space = useRef(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const worldRef = useRef<SVGGElement>(null);
 
   drawRef.current = draft;
+  // on open, scroll so the page's content starts below the floating toolbar
+  useEffect(() => {
+    const list = elsRef.current; if (!list.length) return;
+    const svg = svgRef.current, dock = rootRef.current?.querySelector(".dock");
+    if (!svg || !dock) return;
+    const top = dock.getBoundingClientRect().bottom - svg.getBoundingClientRect().top + 20;
+    const bs = list.map(bbox), minY = Math.min(...bs.map((q) => q.y)), minX = Math.min(...bs.map((q) => q.x)), maxX = Math.max(...bs.map((q) => q.x + q.w));
+    const avail = svg.getBoundingClientRect().width - 32, wide = Math.max(0, maxX) - Math.min(0, minX);
+    const k = wide > avail ? Math.max(0.45, avail / wide) : 1; // zoom out so the whole width fits
+    setView({ k, x: minX * k < 16 ? 16 - minX * k : 0, y: Math.max(0, top - minY * k) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // a template's shapes share a group id: selecting one selects the whole group
   const withGroups = (ids: string[], list = elsRef.current) => { const gs = new Set(list.filter((x) => ids.includes(x.id) && x.g).map((x) => x.g)); return list.filter((x) => ids.includes(x.id) || (x.g && gs.has(x.g))).map((x) => x.id); };
   const setSel = (id: string | null, add = false) => setSelIds((cur) => { if (!id) return add ? cur : []; const ids = withGroups([id]); if (!add) return ids; return cur.includes(id) ? cur.filter((x) => !ids.includes(x)) : [...cur, ...ids]; });
   const selRef = useRef(selIds); selRef.current = selIds;
+  const sb = (() => {
+    const bs = els.filter((x) => selIds.includes(x.id)).map(bbox); if (!bs.length) return null;
+    const x = Math.min(...bs.map((q) => q.x)), y = Math.min(...bs.map((q) => q.y));
+    return { x, y, w: Math.max(...bs.map((q) => q.x + q.w)) - x, h: Math.max(...bs.map((q) => q.y + q.h)) - y };
+  })();
+
   const commit = useCallback((next: El[], prev = elsRef.current) => {
     past.current.push(prev); future.current = [];
     setEls(next); onChange(next);
@@ -365,13 +401,55 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
       else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
-      else if ((e.key === "Delete" || e.key === "Backspace") && sel) { commit(elsRef.current.filter((x) => !selRef.current.includes(x.id))); setSel(null); }
+      else if ((e.key === "Delete" || e.key === "Backspace") && sel) { e.preventDefault(); commit(elsRef.current.filter((x) => !selRef.current.includes(x.id))); setSel(null); }
       else if (e.key === "Escape") setSel(null);
-      else if (!mod && /^[1-9]$/.test(e.key)) { const hit = TOOLS[+e.key - 1]; if (hit) setTool(hit[0]); }
+      if (!active.current || e.defaultPrevented) return;
+      const ids = selRef.current, cur = elsRef.current;
+      if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); setSelIds(cur.map((x) => x.id)); setTool("select"); }
+      else if (mod && e.key.toLowerCase() === "d" && ids.length) { e.preventDefault(); pasteEls(cur.filter((x) => ids.includes(x.id))); }
+      else if (ids.length && e.key.startsWith("Arrow")) {
+        e.preventDefault(); const st = e.shiftKey ? 10 : 1;
+        const [dx, dy] = e.key === "ArrowLeft" ? [-st, 0] : e.key === "ArrowRight" ? [st, 0] : e.key === "ArrowUp" ? [0, -st] : [0, st];
+        commit(cur.map((x) => (ids.includes(x.id) ? moveEl(x, dx, dy) : x)));
+      }
+      else if (e.key === "Enter" && ids.length) { const t = firstText(ids); if (t) { e.preventDefault(); editText(t); } }
+      else if (!mod && !e.altKey && e.key.length === 1 && e.code !== "Space" && tool !== "hand") {
+        // just start typing: edits the selected text, or starts new text where the page was last clicked
+        e.preventDefault();
+        const t = ids.length ? firstText(ids) : null;
+        if (t && ids.every((id) => cur.find((x) => x.id === id)?.t === "text")) editText(t, e.key);
+        else startText(lastPt.current ?? centre(), e.key);
+      }
     };
     const up = (e: KeyboardEvent) => { if (e.code === "Space") space.current = false; };
+    const inField = () => { const t = document.activeElement?.tagName; return t === "INPUT" || t === "TEXTAREA" || t === "SELECT"; };
+    const copy = (e: ClipboardEvent, cut: boolean) => {
+      if (!active.current || inField() || !selRef.current.length) return;
+      const picked = elsRef.current.filter((x) => selRef.current.includes(x.id));
+      const marker = picked.filter((x) => x.t === "text").map((x) => x.text).join("\n") || "[WebNotes drawing]";
+      clip.current = { els: picked, marker }; e.clipboardData?.setData("text/plain", marker); e.preventDefault();
+      if (cut) { commit(elsRef.current.filter((x) => !selRef.current.includes(x.id))); setSel(null); }
+    };
+    const onCopy = (e: ClipboardEvent) => copy(e, false), onCut = (e: ClipboardEvent) => copy(e, true);
+    const onPaste = (e: ClipboardEvent) => {
+      if (!active.current || inField()) return;
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      e.preventDefault();
+      if (clip.current && text === clip.current.marker) { pasteEls(clip.current.els); return; }
+      if (!text.trim()) return;
+      const p = lastPt.current ?? centre(), st = newTextStyle();
+      const el: El = { id: uid(), t: "text", x: p[0], y: p[1] + st.fs * 0.35, text: text.replace(/\r/g, ""), w: 1, ...st };
+      commit([...elsRef.current, el]); setSelIds([el.id]); setTool("select");
+    };
+    const outside = (e: PointerEvent) => { if (!rootRef.current?.contains(e.target as Node)) active.current = false; };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+    document.addEventListener("copy", onCopy); document.addEventListener("cut", onCut); document.addEventListener("paste", onPaste);
+    document.addEventListener("pointerdown", outside, true);
+    return () => {
+      window.removeEventListener("keydown", down); window.removeEventListener("keyup", up);
+      document.removeEventListener("copy", onCopy); document.removeEventListener("cut", onCut); document.removeEventListener("paste", onPaste);
+      document.removeEventListener("pointerdown", outside, true);
+    };
   });
 
   const idAt = (x: number, y: number) => (document.elementFromPoint(x, y)?.closest("[data-id]") as HTMLElement | null)?.dataset.id ?? null;
@@ -392,17 +470,27 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     }
     if (e.pointerType === "pen" && !penOnly) setPenOnly(true); // a stylus was used: let fingers pan instead
     const p = toWorld(e.clientX, e.clientY);
+    active.current = true; lastPt.current = p;
+    if (tool === "select" && (e.target as Element).closest?.("[data-handle]") && sb) {
+      drag.current = { mode: "scale", sx: 0, sy: 0, last: p, snap: elsRef.current, box: sb, ids: selRef.current }; return;
+    }
     if (e.button === 1 || tool === "hand" || space.current || (penOnly && e.pointerType === "touch")) { drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, last: [view.x, view.y] }; return; }
     if (tool === "select") {
       const id = idAt(e.clientX, e.clientY);
       if (!id) { if (!e.shiftKey) setSel(null); setMarq({ x: p[0], y: p[1], x2: p[0], y2: p[1] }); drag.current = { mode: "marquee", sx: 0, sy: 0, last: p }; return; }
       if (e.shiftKey) { setSel(id, true); return; }
-      if (!selRef.current.includes(id)) setSel(id);
-      drag.current = { mode: "move", sx: 0, sy: 0, last: p, snap: elsRef.current };
+      const already = selRef.current.includes(id);
+      if (!already) setSel(id);
+      const hitEl = elsRef.current.find((x) => x.id === id);
+      // clicking a text that is already selected (e.g. inside a template) opens it for typing
+      drag.current = { mode: "move", sx: 0, sy: 0, last: p, snap: elsRef.current, editOnUp: already && hitEl?.t === "text" ? id : undefined };
       return;
     }
     if (tool === "eraser") { drag.current = { mode: "erase", sx: 0, sy: 0, last: p, snap: elsRef.current }; erase(e.clientX, e.clientY); return; }
-    if (tool === "text") { setTimeout(() => setTextBox({ x: p[0], y: p[1], value: "" }), 0); return; } // after mousedown's focus change, or the box blurs at once
+    if (tool === "text") { // after mousedown's focus change, or the box blurs at once
+      const id = idAt(e.clientX, e.clientY), hitEl = elsRef.current.find((x) => x.id === id);
+      setTimeout(() => (hitEl?.t === "text" ? editText(hitEl) : startText(p, "", hitEl)), 0); return;
+    }
     const t = tool as ElType;
     const isFree = t === "pen" || t === "hl";
     if (!isFree && snapGrid) { p[0] = Math.round(p[0] / 24) * 24; p[1] = Math.round(p[1] / 24) * 24; }
@@ -435,6 +523,10 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     const p = toWorld(e.clientX, e.clientY);
     if (d.mode === "erase") { erase(e.clientX, e.clientY); return; }
     if (d.mode === "marquee") { setMarq((m) => (m ? { ...m, x2: p[0], y2: p[1] } : m)); return; }
+    if (d.mode === "scale" && d.box) {
+      const bx = d.box, k = Math.max(0.15, Math.max((p[0] - bx.x) / (bx.w || 1), (p[1] - bx.y) / (bx.h || 1)));
+      d.moved = true; setEls(d.snap!.map((x) => (d.ids!.includes(x.id) ? scaleEl(x, bx.x, bx.y, k) : x))); return;
+    }
     if (d.mode === "move" && selRef.current.length) {
       d.moved = true;
       const dx = p[0] - d.last[0], dy = p[1] - d.last[1]; d.last = p;
@@ -485,8 +577,9 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
       setSelIds((cur) => [...new Set([...cur, ...withGroups(inside)])]);
       return;
     }
-    if (d.mode === "erase" || d.mode === "move") {
+    if (d.mode === "erase" || d.mode === "move" || d.mode === "scale") {
       if (d.mode === "erase" ? elsRef.current.length !== d.snap!.length : d.moved) { past.current.push(d.snap!); future.current = []; onChange(elsRef.current); }
+      else if (d.mode === "move" && d.editOnUp) { const t = elsRef.current.find((x) => x.id === d.editOnUp); if (t) setTimeout(() => editText(t), 0); }
       return;
     }
     if (d.mode !== "draw" || !draft) return;
@@ -519,19 +612,54 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
 
   const onDouble = (e: React.MouseEvent) => {
     const id = idAt(e.clientX, e.clientY); const el = els.find((x) => x.id === id);
-    if (!el) return;
-    if (el.t === "text") setTextBox({ id: el.id, x: el.x, y: el.y - (el.fs || 20), value: el.text || "", fs: el.fs, font: el.font });
+    if (tool !== "select" && tool !== "text") return;
+    // double-click empty space or inside a box/cell to type there; on text to edit it
+    if (!el || (el.t !== "text" && el.t !== "plot")) { const p = toWorld(e.clientX, e.clientY); setTimeout(() => startText(p, "", el), 0); return; }
+    if (el.t === "text") { editText(el); return; }
     if (el.t === "plot") {
       const ex = window.prompt("Edit function(s):", el.expr);
       if (ex) { try { parsePlotShort(ex); commit(els.map((x) => (x.id === el.id ? { ...x, expr: ex } : x))); } catch (err) { alert("Invalid: " + (err as Error).message); } }
     }
   };
 
+  const centre = (): Pt => { const r = svgRef.current!.getBoundingClientRect(); return [(r.width / 2 - view.x) / view.k, (r.height / 2 - view.y) / view.k]; };
+  const newTextStyle = () => ({ fs: 14 + width * 2, font: sketch ? ("hand" as const) : undefined, c: color });
+  const firstText = (ids: string[]) => elsRef.current.filter((x) => ids.includes(x.id) && x.t === "text").sort((a, b) => a.y - b.y || a.x - b.x)[0] ?? null;
+  const editText = (el: El, append = "") => {
+    setSelIds([el.id]);
+    setTextBox({ id: el.id, x: el.x, y: el.y, value: (el.text || "") + append, fs: el.fs || 20, font: el.font, bold: el.bold, c: el.c, rot: el.rot, rc: el.rc });
+  };
+  // new text at a point; inside a template it joins the template and copies its lettering
+  const startText = (p: Pt, init = "", inside?: El | null) => {
+    let st: { fs: number; font?: El["font"]; c: string; bold?: boolean } = newTextStyle(); let extra: Partial<El> = {};
+    if (inside?.g) {
+      const sib = elsRef.current.filter((x) => x.g === inside.g && x.t === "text" && !x.bold && (x.fs ?? 16) <= 20)[0];
+      if (sib) st = { fs: sib.fs ?? 16, font: sib.font, c: sib.c };
+      else if (inside.sk) st = { ...st, fs: 16, font: "hand" };
+      extra = { g: inside.g, rot: inside.rot, rc: inside.rc };
+    }
+    setTextBox({ x: p[0], y: p[1] + st.fs * 0.35, value: init, ...st, ...extra } as NonNullable<typeof textBox>);
+  };
+  const pasteEls = (src: El[]) => {
+    const gm = new Map<string, string>();
+    const copies = src.map((x) => moveEl({ ...x, id: uid(), g: x.g ? gm.get(x.g) ?? (gm.set(x.g, uid()), gm.get(x.g)) : undefined }, 24, 24));
+    commit([...elsRef.current, ...copies]); setSelIds(copies.map((x) => x.id)); setTool("select");
+    if (clip.current) clip.current = { ...clip.current, els: copies };
+  };
+  const restyleText = (f: (t: El) => Partial<El>) => commit(els.map((x) => (selIds.includes(x.id) && x.t === "text" ? { ...x, ...f(x) } : x)));
+
   const commitText = () => {
     const tb = textBox; setTextBox(null);
     if (!tb) return;
-    if (tb.id) commit(tb.value.trim() ? els.map((x) => (x.id === tb.id ? { ...x, text: tb.value } : x)) : els.filter((x) => x.id !== tb.id));
-    else if (tb.value.trim()) { commit([...els, { id: uid(), t: "text", x: tb.x, y: tb.y + 16, c: color, w: 1, text: tb.value, fs: 16 + width * 2, ...(sketch ? { font: "hand" as const } : {}) }]); }
+    const cur = elsRef.current;
+    if (tb.id) {
+      const old = cur.find((x) => x.id === tb.id);
+      if (old && old.text === tb.value) return;
+      commit(tb.value.trim() ? cur.map((x) => (x.id === tb.id ? { ...x, text: tb.value } : x)) : cur.filter((x) => x.id !== tb.id));
+    } else if (tb.value.trim()) {
+      const el: El = { id: uid(), t: "text", x: tb.x, y: tb.y, c: tb.c, w: 1, text: tb.value, fs: tb.fs, font: tb.font, bold: tb.bold, g: tb.g, rot: tb.rot, rc: tb.rc };
+      commit([...cur, el]); setSelIds([el.id]);
+    }
   };
 
   const exportSvg = () => {
@@ -562,11 +690,6 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   };
 
   const selEl = els.find((x) => x.id === sel);
-  const sb = (() => {
-    const bs = els.filter((x) => selIds.includes(x.id)).map(bbox); if (!bs.length) return null;
-    const x = Math.min(...bs.map((q) => q.x)), y = Math.min(...bs.map((q) => q.y));
-    return { x, y, w: Math.max(...bs.map((q) => q.x + q.w)) - x, h: Math.max(...bs.map((q) => q.y + q.h)) - y };
-  })();
   const cursor = tool === "hand" || space.current ? "grab" : tool === "select" ? "default" : tool === "text" ? "text" : "crosshair";
   const btn = "btn icon-btn ghost cbtn";
   const delSel = () => { if (selIds.length) { commit(els.filter((x) => !selIds.includes(x.id))); setSel(null); } };
@@ -598,7 +721,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   };
 
   return (
-    <div className="relative h-full w-full select-none overflow-hidden">
+    <div ref={rootRef} className="relative h-full w-full select-none overflow-hidden">
       <svg ref={svgRef} className="h-full w-full touch-none" style={{ cursor }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDouble}>
         <PaperLayer paper={paper} view={view} />
@@ -606,17 +729,26 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           <g ref={worldRef}>{els.filter((e) => !snapPrev?.remove.includes(e.id)).map((e) => <g key={e.id} data-id={e.id}><Shape e={e} /></g>)}</g>
           {draft && <Shape e={snapPrev ? snapPrev.el : draft} />}
           {marq && <rect x={Math.min(marq.x, marq.x2)} y={Math.min(marq.y, marq.y2)} width={Math.abs(marq.x2 - marq.x)} height={Math.abs(marq.y2 - marq.y)} fill="var(--accent)" fillOpacity={0.06} stroke="var(--accent)" strokeDasharray="4 3" strokeWidth={1 / view.k} pointerEvents="none" />}
+          {sb && tool === "select" && !textBox && <rect data-handle="se" x={sb.x + sb.w + 6 - 7 / view.k} y={sb.y + sb.h + 6 - 7 / view.k} width={14 / view.k} height={14 / view.k} rx={3 / view.k} fill="var(--raised)" stroke="var(--accent)" strokeWidth={2 / view.k} style={{ cursor: "nwse-resize" }} />}
           {sb && <rect x={sb.x - 6} y={sb.y - 6} width={sb.w + 12} height={sb.h + 12} fill="none" stroke="var(--accent)" strokeDasharray="5 4" strokeWidth={1.5 / view.k} pointerEvents="none" />}
         </g>
       </svg>
 
-      {textBox && (
-        <textarea autoFocus className="bd absolute min-w-[120px] resize rounded border bg-transparent p-1"
-          style={{ left: textBox.x * view.k + view.x, top: (textBox.y) * view.k + view.y, fontSize: (textBox.fs ?? 16 + width * 2) * view.k, color: "var(--text)", fontFamily: textBox.font === "hand" ? "Kalam,cursive" : textBox.font === "script" ? "Caveat,cursive" : undefined }}
-          placeholder="Type… (Esc / click away to finish)" value={textBox.value}
-          onChange={(e) => setTextBox({ ...textBox, value: e.target.value })} onBlur={commitText}
-          onKeyDown={(e) => { if (e.key === "Escape") (e.target as HTMLElement).blur(); }} />
-      )}
+      {textBox && (() => {
+        const lines = textBox.value.split("\n"), longest = Math.max(4, ...lines.map((l) => l.length));
+        const fam = textBox.font ? ({ hand: "Kalam,cursive", script: "Caveat,cursive", mono: "'JetBrains Mono',monospace" } as const)[textBox.font] : "'Hanken Grotesk',ui-sans-serif,sans-serif";
+        const left = textBox.x * view.k + view.x, top = (textBox.y - textBox.fs * 0.95) * view.k + view.y;
+        const col = textBox.c === "auto" ? "var(--text)" : textBox.c === "accent" ? "var(--accent)" : textBox.c;
+        return (
+          <textarea autoFocus className="text-edit" aria-label="Text" spellCheck
+            style={{ left, top, fontSize: textBox.fs * view.k, fontFamily: fam, fontWeight: textBox.bold ? 700 : 400, color: col, width: `calc(${longest + 2}ch)`, height: `${lines.length * 1.3 + 0.25}em`,
+              transform: textBox.rot ? `rotate(${textBox.rot}deg)` : undefined, transformOrigin: "0 0" }}
+            placeholder="Type here" value={textBox.value}
+            onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
+            onChange={(e) => setTextBox({ ...textBox, value: e.target.value })} onBlur={commitText}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); (e.target as HTMLElement).blur(); } }} />
+        );
+      })()}
 
       <div className="dock" role="toolbar" aria-label="Drawing tools">
         <div className="dock-group">
@@ -640,6 +772,11 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           <button className={btn} title="Redo (⇧⌘Z)" aria-label="Redo" onClick={redo}><Icon name="redo" /></button>
           {sel && <button className={btn} title="Delete selection" aria-label="Delete selection" onClick={delSel}><Icon name="trash" /></button>}
           {oneGroup && <button className={btn} title="Ungroup: edit the template's parts one by one" aria-label="Ungroup" onClick={() => commit(els.map((x) => (selIds.includes(x.id) ? { ...x, g: undefined } : x)))}><Icon name="ungroup" /></button>}
+          {selEls.some((x) => x.t === "text") && <>
+            <button className={btn} title="Smaller text" aria-label="Smaller text" onClick={() => restyleText((t) => ({ fs: Math.max(8, (t.fs || 20) - 2) }))}><span className="txt-ico">A−</span></button>
+            <button className={btn} title="Bigger text" aria-label="Bigger text" onClick={() => restyleText((t) => ({ fs: (t.fs || 20) + 2 }))}><span className="txt-ico">A+</span></button>
+            <button className={btn} title="Bold" aria-label="Bold" onClick={() => { const on = !selEls.filter((x) => x.t === "text").every((x) => x.bold); restyleText(() => ({ bold: on || undefined })); }}><span className="txt-ico font-bold">B</span></button>
+          </>}
           {selEls.length > 1 && !oneGroup && <button className={btn} title="Group: move these together" aria-label="Group" onClick={() => { const g = uid(); commit(els.map((x) => (selIds.includes(x.id) ? { ...x, g } : x))); }}><Icon name="template" /></button>}
         </div>
         <div className="dock-group">
@@ -701,7 +838,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
             {shown.length === 0 && <p className="muted col-span-2 text-sm">No templates here yet.</p>}
           </div>
           <div className="stamp-foot">
-            <span className="flex-1">Tap to drop in the middle of the page. Drag to move; Ungroup to edit parts.</span>
+            <span className="flex-1">Tap to drop it on the page. Double-click any text to change it, or inside a box or cell to type there. Drag the corner handle to resize.</span>
           </div>
           <div className="flex gap-2 pt-2">
             <button className="btn flex-1" onClick={() => setPanel("save")}><Icon name="plus" /> New template</button>

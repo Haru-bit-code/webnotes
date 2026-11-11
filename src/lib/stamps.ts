@@ -3,6 +3,7 @@
 // and every line or label stays editable.
 import { El, ElType, Pt } from "./types";
 import { COL, sketch } from "./sketchKit";
+const INK_LINE = "#a16207";
 
 export type Stamp = { name: string; cat: Category; build: () => El[] };
 export type Category = "Sketch" | "Tables" | "Charts" | "Lines & lists" | "Diagrams" | "Planning" | "Study" | "Maths & science";
@@ -72,55 +73,65 @@ function chartFrame(k: ReturnType<typeof kit>, w: number, h: number, gridlines =
 const SK = (name: string, f: (k: ReturnType<typeof sketch>) => void): Stamp => ({ name, cat: "Sketch", build: () => { const k = sketch(); f(k); return k.done(); } });
 
 export const STAMPS: Stamp[] = [
-  // ---- Sketch: hand-drawn study-sheet blocks
-  SK("Page title", (k) => { k.title(0, 50, "Page title"); k.wavy(0, 74, 420); k.text(0, 104, "study notes · date", { fs: 16, c: COL.grey }); }),
-  SK("Section box", (k) => { k.section(0, 0, 420, 220, "About"); k.text(20, 86, "Write the main idea here.", { fs: 16 }); k.text(20, 114, "Add a second line.", { fs: 16 }); }),
-  SK("Sticky · yellow", (k) => k.sticky(0, 0, 330, 170, COL.yellow, "Who uses it?", ["👀 Reader – anyone", "✍️ User – signs in", "🛡️ Moderator – checks"])),
-  SK("Sticky · green", (k) => k.sticky(0, 0, 330, 170, COL.mint, "Added this round", ["★ First change", "★ Second change", "★ Third change"], 1)),
-  SK("Sticky · pink", (k) => k.sticky(0, 0, 420, 90, COL.pink, "", ["Pattern: what keeps going wrong –", "and why."], 0.6)),
-  SK("Sticky · blue", (k) => k.sticky(0, 0, 420, 90, COL.sky, "", ["Rule of thumb: the one thing", "to remember."], -0.6)),
-  SK("Numbered list", (k) => k.numbered(0, 0, 520, ["First item", "Second item", "Third item", "Fourth item", "Fifth item"])),
-  SK("Problem → fix", (k) => {
-    k.matrix(0, 0, ["#", "Problem  →  what we did"], [62, 540], []);
-    ["Problem one", "Problem two", "Problem three"].forEach((p, i) => {
+  // ---- Sketch: hand-drawn blocks (double-click any text to edit, or inside a box to add text)
+  SK("Page title", (k) => { k.title(0, 50, "Page title"); k.wavy(0, 74, 360); k.text(0, 104, "date · subject", { fs: 16, c: COL.grey }); }),
+  SK("Section box", (k) => { k.section(0, 0, 420, 220, "Heading"); k.text(20, 90, "Write here…", { fs: 16 }); }),
+  SK("Sticky · idea", (k) => k.sticky(0, 0, 300, 170, COL.yellow, "Idea 💡", ["…", "…"])),
+  SK("Sticky · to do", (k) => k.sticky(0, 0, 300, 170, COL.mint, "To do", ["☐ …", "☐ …", "☐ …"], 1)),
+  SK("Sticky · remember", (k) => k.sticky(0, 0, 300, 150, COL.pink, "Remember!", ["…"], 0.8)),
+  SK("Sticky · question", (k) => k.sticky(0, 0, 300, 150, COL.sky, "Question?", ["…"], -0.8)),
+  SK("Numbered list", (k) => k.numbered(0, 0, 520, ["…", "…", "…", "…", "…"])),
+  SK("Action items", (k) => k.matrix(0, 0, ["Task", "Owner", "Due", "Done"], [280, 120, 110, 70], [["…", "", "", "☐"], ["…", "", "", "☐"], ["…", "", "", "☐"], ["…", "", "", "☐"]])),
+  SK("Problem → solution", (k) => {
+    k.matrix(0, 0, ["#", "Problem  →  solution"], [62, 540], []);
+    for (let i = 0; i < 3; i++) {
       const y = 34 + i * 58; k.line(0, y + 58, 602, y + 58, { w: 1.6, sk: 0.4 }); k.ellipse(18, y + 16, 26, 26); k.text(26, y + 35, String(i + 1), { fs: 15 });
-      k.text(74, y + 22, p, { fs: 14, c: COL.red }); k.text(74, y + 44, "→ what we changed", { fs: 15 });
-    });
+      k.text(74, y + 22, "Problem…", { fs: 14, c: COL.red }); k.text(74, y + 44, "→ solution…", { fs: 15 });
+    }
     k.line(62, 34, 62, 34 + 3 * 58, { w: 1.4, sk: 0.4 }); k.box(0, 0, 602, 34 + 3 * 58, { w: 2.2, sk: 0.4 });
   }),
-  SK("Who can do what", (k) => k.matrix(0, 0, ["Ability", "Reader", "User", "Admin"], [240, 80, 80, 80], [["Browse", true, true, true], ["Write", false, true, true], ["Moderate", false, false, true], ["Delete", false, false, true]])),
-  SK("Roles flow", (k) => {
-    const xs = [30, 230, 430, 630], names: [string, string][] = [["Reader", COL.grey], ["User", COL.blue], ["Moderator", COL.green], ["Admin", COL.red]];
-    xs.forEach((x, i) => { k.stickman(x, 14, names[i][0], names[i][1]); if (i < 3) { k.arrow(x + 50, 60, x + 160, 60, { w: 2 }); k.text(x + 72, 46, ["sign in", "+ trust", "+ power"][i], { fs: 14 }); } });
+  SK("Compare options", (k) => k.matrix(0, 0, ["Criteria", "Option A", "Option B", "Option C"], [200, 110, 110, 110], [["Cost", true, false, true], ["Speed", false, true, true], ["Ease", true, true, false], ["Score", "", "", ""]])),
+  SK("Definition card", (k) => { k.box(0, 0, 420, 170); k.text(18, 40, "Term", { fs: 28, bold: true, font: "script", c: COL.blue }); k.text(18, 78, "Definition: …", { fs: 16 }); k.text(18, 112, "Example: …", { fs: 16, c: COL.grey }); k.text(18, 146, "See also: …", { fs: 14, c: COL.grey }); }),
+  SK("Q & A card", (k) => { k.box(0, 0, 420, 150); k.text(18, 42, "Q:", { fs: 26, bold: true, font: "script", c: COL.red }); k.text(58, 42, "…", { fs: 16 }); k.line(14, 74, 406, 74, { dash: true, w: 1 }); k.text(18, 112, "A:", { fs: 26, bold: true, font: "script", c: COL.green }); k.text(58, 112, "…", { fs: 16 }); }),
+  SK("Formula box", (k) => { k.box(0, 0, 380, 150, { fill: COL.yellow, c: "#a16207" }); k.text(18, 38, "Formula", { fs: 24, bold: true, font: "script", c: "#1f2937" }); k.text(18, 86, "a² + b² = c²", { fs: 26, c: "#1f2937" }); k.text(18, 126, "where …", { fs: 14, c: "#475569" }); }),
+  SK("Process flow", (k) => {
+    for (let i = 0; i < 4; i++) { const x = i * 170; k.box(x, 0, 136, 70); k.text(x + 14, 32, `Step ${i + 1}`, { fs: 22, bold: true, font: "script" }); k.text(x + 14, 56, "…", { fs: 13, c: COL.grey }); if (i < 3) k.arrow(x + 138, 35, x + 166, 35); }
   }),
   SK("Swimlanes", (k) => {
-    [["Reader", "auto"], ["User", COL.blue], ["Moderator", COL.green]].forEach(([l, c], i) => k.lane(0, i * 120, 720, 108, l, c));
-    k.card(150, 40, 130, 40, COL.yellow, "Search"); k.card(330, 40, 130, 40, COL.yellow, "Open page"); k.arrow(282, 60, 326, 60);
-    k.card(150, 160, 150, 40, COL.sky, "Write story"); k.card(360, 160, 130, 40, COL.peach, "Pending", { bold: true }); k.arrow(302, 180, 356, 180);
-    k.card(360, 280, 140, 40, COL.pink, "Reject"); k.card(550, 280, 140, 40, COL.mint, "Approve"); k.arrow(425, 202, 425, 276, { c: COL.red }); k.arrow(492, 196, 600, 276, { c: COL.green });
+    [["Team A", COL.blue], ["Team B", COL.green], ["Team C", COL.red]].forEach(([l, c], i) => k.lane(0, i * 120, 720, 108, l, c));
+    k.card(150, 40, 130, 40, COL.yellow, "Task"); k.card(330, 40, 130, 40, COL.yellow, "Task"); k.arrow(282, 60, 326, 60);
+    k.card(330, 160, 150, 40, COL.sky, "Task"); k.arrow(395, 82, 400, 156);
+    k.card(540, 280, 140, 40, COL.mint, "Done ✔"); k.arrow(482, 182, 600, 276, { c: COL.green });
   }),
-  SK("State flow", (k) => {
-    k.card(0, 0, 150, 48, COL.peach, "PENDING", { fs: 18 }); k.card(260, 0, 170, 48, COL.mint, "PUBLISHED", { fs: 18 }); k.card(540, 0, 150, 48, COL.pink, "HIDDEN", { fs: 18 });
-    k.card(0, 130, 170, 48, COL.sky, "CHANGES_REQ", { fs: 18 }); k.card(260, 130, 150, 48, COL.stone, "REJECTED", { fs: 18 });
-    k.arrow(152, 24, 256, 24, { c: COL.green }); k.text(176, 14, "Approve", { fs: 13, c: COL.green });
-    k.arrow(432, 18, 536, 18, { c: COL.red }); k.text(468, 10, "Hide", { fs: 13, c: COL.red });
-    k.arrow(536, 34, 432, 34, { c: COL.green });
-    k.arrow(40, 50, 40, 126, { c: COL.blue }); k.arrow(120, 50, 300, 126, { c: COL.red });
+  SK("Status flow", (k) => {
+    [["To do", COL.stone], ["In progress", COL.peach], ["Review", COL.sky], ["Done", COL.mint]].forEach(([l, f], i) => { k.card(i * 200, 0, 160, 48, f, l, { fs: 18 }); if (i < 3) k.arrow(i * 200 + 162, 24, i * 200 + 196, 24); });
+    k.pen([[480, 50], [400, 96], [300, 50]], { head: true, c: COL.red, w: 1.6 }); k.text(330, 112, "changes needed", { fs: 13, c: COL.red });
   }),
-  SK("Pipeline", (k) => {
-    ["Browser", "Guard", "Validate", "Use case", "Database"].forEach((s, i) => {
-      const x = i * 160; k.box(x, 0, 130, 70); k.text(x + 14, 32, `${i + 1} ${s}`, { fs: 22, bold: true, font: "script" }); k.text(x + 14, 56, "what it does", { fs: 12, c: COL.grey });
-      if (i < 4) k.arrow(x + 132, 35, x + 158, 35);
-    });
+  SK("Stick figures", (k) => {
+    k.stickman(40, 14, "Person A", COL.blue); k.stickman(380, 14, "Person B", COL.green);
+    k.arrow(100, 60, 320, 60, { w: 2 }); k.text(150, 46, "says / sends…", { fs: 14 });
   }),
-  SK("Code card", (k) => k.code(0, 0, 440, "Routes", ["GET  /items", "GET  /items/:id", "POST /items        (signed in)", "PATCH /items/:id   (owner)"])),
-  SK("Starred list", (k) => { k.bullets(0, 0, ["First point", "Second point", "Third point", "Fourth point"]); }),
-  SK("Two-column boxes", (k) => {
-    k.section(0, 0, 330, 260, "Round 1", COL.red); k.section(360, 0, 330, 260, "Round 2", COL.blue);
-    k.bullets(22, 90, ["Point", "Point", "Point"], 30, "•", "auto"); k.bullets(382, 90, ["Point", "Point", "Point"], 30, "•", "auto");
+  SK("Timeline", (k) => {
+    k.line(0, 40, 620, 40, { w: 2.2 });
+    for (let i = 0; i < 5; i++) { const x = 30 + i * 140; k.ellipse(x - 9, 31, 18, 18, { fill: COL.orange, c: COL.orange }); k.text(x - 20, 18, "Date", { fs: 13, c: COL.grey }); k.text(x - 22, 76, "Event", { fs: 16 }); }
   }),
+  SK("Mind map", (k) => {
+    const cx = 260, cy = 160;
+    [[40, 30], [400, 30], [40, 260], [400, 260]].forEach(([x, y]) => { k.line(cx, cy, x + 60, y + 22, { w: 1.6 }); k.card(x, y, 120, 44, COL.sky, "Branch"); });
+    k.ellipse(cx - 90, cy - 38, 180, 76, { fill: COL.yellow, c: INK_LINE, w: 2 }); k.text(cx - 46, cy + 8, "Big idea", { fs: 22, bold: true, font: "script", c: "#1f2937" });
+  }),
+  SK("Before / after", (k) => {
+    k.section(0, 0, 330, 240, "Before", COL.red); k.section(360, 0, 330, 240, "After", COL.green);
+    k.bullets(22, 90, ["…", "…", "…"], 30, "•", "auto"); k.bullets(382, 90, ["…", "…", "…"], 30, "•", "auto");
+  }),
+  SK("Rating scale", (k) => {
+    k.text(0, 20, "How did it go?", { fs: 20, bold: true, font: "script" });
+    ["😞", "🙁", "😐", "🙂", "😄"].forEach((m, i) => { k.ellipse(i * 70, 40, 54, 54); k.text(i * 70 + 14, 76, m, { fs: 22, font: "ui" }); });
+  }),
+  SK("Starred list", (k) => k.bullets(0, 0, ["…", "…", "…", "…"])),
+  SK("Code card", (k) => k.code(0, 0, 440, "Snippet", ["function hello(name) {", "  return `Hi ${name}`;", "}"])),
   SK("Wavy underline", (k) => { k.wavy(0, 10, 360); }),
-  SK("Marker highlight", (k) => { k.pen([[0, 12], [300, 12]], { t: "hl", c: "#facc15", w: 18 }); k.text(6, 18, "highlighted words", { fs: 18 }); }),
+  SK("Marker highlight", (k) => { k.pen([[0, 12], [260, 12]], { t: "hl", c: "#facc15", w: 18 }); k.text(6, 18, "important words", { fs: 18 }); }),
 
   // ---- Tables
   { name: "Table 2 × 3", cat: "Tables", build: () => table(2, 3) },

@@ -1,84 +1,87 @@
-// Full-page layouts for new scribble pages, in the hand-drawn study-sheet style.
-// Each block is its own group, so the parts can be moved or deleted separately.
+// Full-page layouts for new scribble pages, in a hand-drawn style.
+// Every block is its own group: drag to move it, double-click any text to change it,
+// double-click inside a box or table cell to type there.
 import { El, Paper } from "./types";
 import { COL, sketch } from "./sketchKit";
 
 export type PageTemplate = { id: string; name: string; hint: string; paper: Paper; build: () => El[] };
 type K = ReturnType<typeof sketch>;
 const blocks = (...fs: ((k: K) => void)[]) => fs.flatMap((f) => { const k = sketch(); f(k); return k.done(); });
-
-const header = (t: string, sub = "study notes · date") => (k: K) => { k.title(110, 92, t, 54); k.wavy(110, 122, Math.max(320, t.length * 26)); k.text(112, 156, sub, { fs: 17, c: COL.grey }); };
+const header = (t: string, sub = "date · subject") => (k: K) => { k.title(110, 92, t, 52); k.wavy(110, 120, Math.max(300, t.length * 25)); k.text(112, 154, sub, { fs: 17, c: COL.grey }); };
+const rows = (n: number, v = "") => Array.from({ length: n }, () => v);
 
 export const PAGE_TEMPLATES: PageTemplate[] = [
-  { id: "overview", name: "Project overview", hint: "Title, about, stack table, stickies, roles", paper: "sheet", build: () => blocks(
-    header("Project name"),
-    (k) => { k.section(110, 180, 400, 230, "About"); k.text(130, 266, "One or two lines on what it is", { fs: 16 }); k.text(130, 294, "and who it is for.", { fs: 16 }); },
-    (k) => { k.section(540, 180, 380, 230, "Stack"); k.matrix(560, 240, ["Part", "Tools"], [80, 260], [["Front", ""], ["Back", ""], ["DB", ""]]); },
-    (k) => k.sticky(960, 170, 340, 170, COL.yellow, "Who uses it?", ["👀 Reader – …", "✍️ User – …", "🔑 Admin – …"]),
-    (k) => k.sticky(960, 380, 340, 170, COL.mint, "Added this round", ["★ …", "★ …", "★ …"], 1.2),
-    (k) => { k.section(110, 440, 810, 250, "Features (what it does)"); k.bullets(134, 530, ["Feature one", "Feature two", "Feature three"]); k.bullets(530, 530, ["Feature four", "Feature five", "Feature six"]); },
-    (k) => { k.text(110, 760, "Roles →", { fs: 18, c: COL.grey }); [[260, "Reader", COL.grey], [480, "User", COL.blue], [700, "Moderator", COL.green], [920, "Admin", COL.red]].forEach(([x, n, c], i) => { k.stickman(x as number, 780, n as string, c as string); if (i < 3) k.arrow((x as number) + 50, 826, (x as number) + 170, 826, { w: 2 }); }); },
+  { id: "meeting", name: "Meeting notes", hint: "Attendees, agenda, decisions, action items", paper: "sheet", build: () => blocks(
+    header("Meeting", "date · time · place"),
+    (k) => k.sticky(900, 60, 360, 150, COL.yellow, "Attendees", ["…", "…", "…"]),
+    (k) => { k.section(110, 190, 560, 300, "Agenda"); k.numbered(132, 250, 516, rows(4, "…"), 1, 48); },
+    (k) => { k.section(700, 240, 560, 250, "Decisions", COL.green); k.bullets(724, 330, ["…", "…", "…"], 34, "✔", COL.green); },
+    (k) => { k.text(110, 550, "Action items", { fs: 32, bold: true, font: "script", c: COL.blue }); k.matrix(110, 570, ["Task", "Owner", "Due", "Done"], [640, 220, 180, 110], [["…", "", "", "☐"], ["…", "", "", "☐"], ["…", "", "", "☐"], ["…", "", "", "☐"]], 40); },
+    (k) => k.sticky(110, 800, 1150, 80, COL.sky, "", ["Next meeting: …"], -0.3),
   ) },
-  { id: "errors", name: "Errors & fixes", hint: "Two numbered tables with pattern notes", paper: "sheet", build: () => blocks(
-    header("Errors we found 🐞"),
-    (k) => { k.section(110, 190, 560, 520, "Round 1 – first review", COL.red); k.numbered(132, 260, 516, ["", "", "", "", "", "", ""]); k.sticky(132, 590, 516, 80, COL.pink, "", ["Pattern: …"], 0.5); },
-    (k) => { k.section(720, 190, 560, 520, "Round 2 – new this round", COL.blue); k.numbered(742, 260, 516, ["", "", "", "", "", "", ""], 8); k.sticky(742, 590, 516, 80, COL.sky, "", ["Pattern: …"], -0.5); },
+  { id: "lecture", name: "Lecture notes", hint: "Cornell method: cues, notes, summary", paper: "sheet", build: () => blocks(
+    header("Lecture: topic", "course · date · lecturer"),
+    (k) => { k.section(110, 190, 300, 580, "Cues", COL.blue); k.bullets(132, 270, ["Key question?", "Term", "Formula"], 44, "?", COL.blue); },
+    (k) => { k.section(440, 190, 820, 580, "Notes"); k.bullets(464, 270, ["Main point", "  detail", "Example"], 36, "•", "auto"); },
+    (k) => k.sticky(110, 810, 1150, 100, COL.yellow, "Summary", ["In two sentences…"], -0.3),
   ) },
-  { id: "flow", name: "End-to-end flow", hint: "Swimlanes with cards and arrows", paper: "sheet", build: () => blocks(
-    header("End to end: a request's life 🗺️"),
+  { id: "revision", name: "Revision sheet", hint: "Key terms, formulas, things to remember, self-test", paper: "sheet", build: () => blocks(
+    header("Revision: topic"),
+    (k) => { k.text(110, 220, "Key terms", { fs: 32, bold: true, font: "script", c: COL.blue }); k.matrix(110, 240, ["Term", "Meaning"], [200, 420], [["…", "…"], ["…", "…"], ["…", "…"], ["…", "…"], ["…", "…"]], 42); },
+    (k) => { k.box(780, 190, 480, 180, { fill: COL.yellow, c: "#a16207" }); k.text(800, 230, "Formulas", { fs: 28, bold: true, font: "script", c: "#1f2937" }); k.text(800, 280, "…", { fs: 22, c: "#1f2937" }); k.text(800, 330, "…", { fs: 22, c: "#1f2937" }); },
+    (k) => k.sticky(780, 400, 480, 150, COL.pink, "Remember!", ["…", "…"], 0.8),
+    (k) => { k.section(110, 520, 620, 330, "Test yourself", COL.red); k.numbered(132, 580, 576, rows(5, "Q: …"), 1, 46, "auto"); },
+    (k) => { k.section(780, 590, 480, 260, "Mistakes I made", COL.orange); k.bullets(804, 670, ["…", "…", "…"], 34); },
+  ) },
+  { id: "project", name: "Project plan", hint: "Goal, milestones, task board, risks", paper: "sheet", build: () => blocks(
+    header("Project plan", "owner · start · deadline"),
+    (k) => { k.box(110, 180, 760, 90, { fill: COL.mint, c: COL.green }); k.text(130, 218, "Goal:", { fs: 28, bold: true, font: "script", c: "#1f2937" }); k.text(210, 218, "…", { fs: 18, c: "#1f2937" }); k.text(130, 252, "Done when: …", { fs: 15, c: "#334155" }); },
+    (k) => k.sticky(910, 170, 350, 160, COL.pink, "Risks ⚠", ["…", "…", "…"], 1),
+    (k) => { k.text(110, 330, "Milestones", { fs: 30, bold: true, font: "script" }); k.line(110, 380, 1260, 380, { w: 2.2 }); [0, 1, 2, 3, 4].forEach((i) => { const x = 160 + i * 260; k.ellipse(x - 9, 371, 18, 18, { fill: COL.orange, c: COL.orange }); k.text(x - 20, 360, "date", { fs: 13, c: COL.grey }); k.text(x - 30, 414, "Milestone", { fs: 16 }); }); },
+    (k) => { [["To do", COL.stone], ["Doing", COL.peach], ["Done", COL.mint]].forEach(([c, f], i) => { const x = 110 + i * 390; k.box(x, 460, 370, 400); k.card(x + 1, 461, 368, 44, f, c, { fs: 20, bold: true }); [0, 1].forEach((j) => k.sticky(x + 20, 530 + j * 120, 330, 96, COL.yellow, "", ["Task…"], j ? 0.8 : -0.8)); }); },
+  ) },
+  { id: "brainstorm", name: "Brainstorm", hint: "Central idea, branches, sticky ideas", paper: "dots", build: () => blocks(
+    header("Brainstorm", "question we are answering"),
     (k) => {
-      [["Reader", "auto"], ["User", COL.blue], ["Moderator", COL.green], ["Admin", COL.red]].forEach(([l, c], i) => k.lane(110, 190 + i * 150, 1180, 136, l, c));
-      k.card(260, 240, 150, 40, COL.yellow, "1 Search"); k.card(470, 240, 150, 40, COL.yellow, "2 Open page"); k.arrow(412, 260, 466, 260);
-      k.card(260, 390, 150, 40, COL.sky, "3 Sign in"); k.card(470, 390, 170, 40, COL.sky, "4 Write"); k.card(700, 390, 150, 40, COL.peach, "5 PENDING", { bold: true });
-      k.arrow(412, 410, 466, 410); k.arrow(642, 410, 696, 410); k.arrow(545, 282, 340, 386, { c: COL.blue, dash: true });
-      k.card(700, 540, 170, 40, COL.yellow, "6 Review"); k.card(940, 540, 170, 40, COL.pink, "Reject"); k.card(1110, 470, 150, 40, COL.mint, "Approve");
-      k.arrow(775, 432, 775, 536); k.arrow(872, 560, 936, 560, { c: COL.red }); k.arrow(872, 548, 1106, 494, { c: COL.green });
-      k.card(260, 690, 190, 40, COL.peach, "Add / archive"); k.card(490, 690, 190, 40, COL.peach, "Users: suspend"); k.card(720, 690, 190, 40, COL.sky, "Audit trail");
+      const cx = 640, cy = 520;
+      [[180, 260], [560, 220], [940, 260], [180, 700], [560, 780], [940, 700]].forEach(([x, y]) => { k.line(cx, cy, x + 80, y + 26, { w: 1.6 }); k.card(x, y, 160, 52, COL.sky, "Branch", { fs: 17 }); });
+      k.ellipse(cx - 130, cy - 54, 260, 108, { fill: COL.yellow, c: "#a16207", w: 2.2 }); k.text(cx - 70, cy + 10, "Big idea", { fs: 34, bold: true, font: "script", c: "#1f2937" });
     },
-    (k) => k.sticky(110, 820, 560, 70, COL.pink, "", ["Edit after approval? It goes back to PENDING."], 0.4),
-    (k) => k.sticky(720, 820, 560, 70, COL.sky, "", ["Guard-rails: limits, ownership, rate limits."], -0.4),
+    (k) => { [[1150, 220, COL.yellow, -2], [1150, 400, COL.mint, 1.5], [1150, 580, COL.pink, -1], [1150, 760, COL.sky, 2]].forEach(([x, y, f, r]) => k.sticky(x as number, y as number, 200, 140, f as string, "", ["idea…"], r as number)); },
   ) },
-  { id: "status", name: "Status map", hint: "States, who-can-see table, notes", paper: "sheet", build: () => blocks(
-    header("Review visibility 👁️"),
-    (k) => {
-      k.card(110, 200, 170, 50, COL.peach, "PENDING", { fs: 19 }); k.card(410, 200, 190, 50, COL.mint, "PUBLISHED", { fs: 19 }); k.card(740, 200, 170, 50, COL.pink, "HIDDEN", { fs: 19 });
-      k.card(110, 340, 190, 50, COL.sky, "CHANGES_REQ", { fs: 19 }); k.card(410, 340, 170, 50, COL.stone, "REJECTED", { fs: 19 }); k.card(740, 340, 170, 50, COL.stone, "DELETED", { fs: 19 });
-      k.arrow(282, 225, 406, 225, { c: COL.green }); k.arrow(602, 218, 736, 218, { c: COL.red }); k.arrow(736, 236, 602, 236, { c: COL.green });
-      k.arrow(150, 252, 150, 336, { c: COL.blue }); k.arrow(240, 252, 450, 336, { c: COL.red }); k.arrow(520, 252, 780, 336, { dash: true });
-    },
-    (k) => k.sticky(960, 190, 330, 110, COL.yellow, "Only PUBLISHED is public.", ["Everything else stays out of search."]),
-    (k) => { k.section(110, 430, 800, 330, "Who can see it?"); k.matrix(132, 500, ["Status", "Public", "Author", "Admin"], [220, 150, 200, 200], [["PENDING", false, true, true], ["PUBLISHED", true, true, true], ["REJECTED", false, true, true], ["HIDDEN", false, true, true], ["DELETED", false, false, false]]); },
-    (k) => { k.section(950, 340, 340, 420, "What the public sees"); k.bullets(972, 420, ["Name or anonymous", "Story, rating", "Date", "Never: email, IDs"], 34); },
+  { id: "decision", name: "Decision maker", hint: "Options vs criteria, pros & cons, verdict", paper: "sheet", build: () => blocks(
+    header("Decision: what should I choose?"),
+    (k) => { k.text(110, 220, "Compare", { fs: 32, bold: true, font: "script", c: COL.blue }); k.matrix(110, 240, ["Criteria", "Weight", "Option A", "Option B", "Option C"], [300, 120, 160, 160, 160], [["…", "", "", "", ""], ["…", "", "", "", ""], ["…", "", "", "", ""], ["…", "", "", "", ""], ["Total", "", "", "", ""]], 44); },
+    (k) => { k.section(110, 540, 560, 280, "Pros", COL.green); k.bullets(134, 620, ["…", "…", "…"], 36, "+", COL.green); },
+    (k) => { k.section(700, 540, 560, 280, "Cons", COL.red); k.bullets(724, 620, ["…", "…", "…"], 36, "−", COL.red); },
+    (k) => k.sticky(1040, 190, 240, 170, COL.yellow, "Verdict", ["…"], 1.5),
   ) },
-  { id: "matrix", name: "Who can do what", hint: "Big permission matrix + three notes", paper: "sheet", build: () => blocks(
-    header("Who can do what 🔑"),
-    (k) => { k.box(110, 190, 1180, 470, { sk: 1.1, w: 2 }); k.matrix(130, 210, ["Ability", "Reader", "User", "Mod", "Admin", "Route"], [300, 90, 90, 90, 90, 480], [["Browse", true, true, true, true, "GET /items"], ["Write / edit own", false, true, true, true, "POST /items"], ["Report", false, true, true, true, "POST /reports"], ["Moderate", false, false, true, true, "POST /admin/decision"], ["Manage users", false, false, false, true, "/admin/users"], ["Audit trail", false, false, false, true, "GET /admin/audit"]]); },
-    (k) => k.sticky(110, 700, 380, 100, COL.yellow, "", ["Locked on the server:", "guards on every admin route."], -0.6),
-    (k) => k.sticky(520, 700, 380, 100, COL.pink, "", ["Admin limits: can't suspend", "self or another admin."], 0.6),
-    (k) => k.sticky(930, 700, 360, 100, COL.sky, "", ["Not built yet: …"], -0.4),
-  ) },
-  { id: "pipeline", name: "Request pipeline", hint: "Numbered steps, error path, example", paper: "sheet", build: () => blocks(
-    header("One request, start to finish 🔄"),
-    (k) => {
-      ["Browser", "Next.js", "1 CSRF", "2 Session", "3 Rate limit", "4 Validate", "5 Controller"].forEach((s, i) => { const x = 110 + i * 170; k.box(x, 200, 140, 80); k.text(x + 14, 236, s, { fs: 22, bold: true, font: "script" }); k.text(x + 14, 264, "…", { fs: 13, c: COL.grey }); if (i < 6) k.arrow(x + 142, 240, x + 168, 240); });
-      ["6 Use case", "7 Unit of work", "8 Database"].forEach((s, i) => { const x = 1130 - i * 230; k.box(x, 350, 160, 80); k.text(x + 14, 386, s, { fs: 22, bold: true, font: "script" }); if (i < 2) k.arrow(x - 4, 390, x - 66, 390); });
-      k.arrow(1200, 282, 1200, 346); k.arrow(560, 390, 300, 390); k.box(110, 350, 180, 80); k.text(124, 386, "9 JSON back", { fs: 22, bold: true, font: "script" });
-      k.text(150, 480, "Error path: any step can fail → clear error code + message", { fs: 15, c: COL.red });
-    },
-    (k) => { k.section(110, 520, 700, 300, "Example: POST /items"); k.text(130, 600, "1. Page sends JSON + cookie\n2. Guard checks the session\n3. Validation passes\n4. Saved in one transaction\n5. Response { data }", { fs: 16 }); },
-    (k) => k.sticky(860, 540, 430, 120, COL.yellow, "Why it matters", ["Guards run before any code", "touches data."]),
-    (k) => k.sticky(860, 700, 430, 90, COL.sky, "", ["Same pipeline for every route."], 0.6),
-  ) },
-  { id: "lecture", name: "Lecture notes", hint: "Cornell-style cues, notes, summary", paper: "sheet", build: () => blocks(
-    header("Lecture: topic"),
-    (k) => { k.section(110, 190, 300, 560, "Cues", COL.blue); k.bullets(132, 270, ["Question?", "Key term", "Formula"], 40, "?", COL.blue); },
-    (k) => { k.section(440, 190, 850, 560, "Notes"); k.bullets(462, 270, ["Main point", "Detail", "Example"]); },
-    (k) => k.sticky(110, 790, 1180, 100, COL.yellow, "Summary", ["In one or two sentences…"], -0.3),
-  ) },
-  { id: "week", name: "Week plan", hint: "Seven day boxes and a notes sticky", paper: "sheet", build: () => blocks(
+  { id: "week", name: "Weekly planner", hint: "Days, top 3 priorities, habits", paper: "sheet", build: () => blocks(
     header("This week", "week of …"),
-    (k) => { ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Weekend"].forEach((d, i) => { const x = 110 + (i % 3) * 400, y = 190 + Math.floor(i / 3) * 300; k.section(x, y, 370, 270, d, [COL.red, COL.orange, COL.green, COL.blue, "#7c3aed", COL.grey][i]); }); },
-    (k) => k.sticky(110, 800, 560, 110, COL.yellow, "Top 3 this week", ["1.", "2.", "3."]),
-    (k) => k.sticky(720, 800, 560, 110, COL.mint, "Done ✔", [""], 1),
+    (k) => { ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Weekend"].forEach((d, i) => { const x = 110 + (i % 3) * 400, y = 180 + Math.floor(i / 3) * 280; k.section(x, y, 370, 250, d, [COL.red, COL.orange, COL.green, COL.blue, "#7c3aed", COL.grey][i]); }); },
+    (k) => k.sticky(110, 760, 480, 150, COL.yellow, "Top 3", ["1.", "2.", "3."], -0.6),
+    (k) => { k.text(640, 790, "Habits", { fs: 30, bold: true, font: "script" }); k.matrix(640, 806, ["Habit", "M", "T", "W", "T", "F", "S", "S"], [200, 50, 50, 50, 50, 50, 50, 50], [["…", "", "", "", "", "", "", ""], ["…", "", "", "", "", "", "", ""]], 36); },
+  ) },
+  { id: "journal", name: "Daily journal", hint: "Mood, gratitude, plan, reflection", paper: "ruled", build: () => blocks(
+    header("Today", "date"),
+    (k) => { k.text(110, 210, "Mood", { fs: 28, bold: true, font: "script" }); ["😞", "🙁", "😐", "🙂", "😄"].forEach((m, i) => { k.ellipse(220 + i * 74, 176, 56, 56); k.text(235 + i * 74, 214, m, { fs: 24, font: "ui" }); }); },
+    (k) => k.sticky(820, 160, 440, 170, COL.mint, "Grateful for", ["1. …", "2. …", "3. …"], 1),
+    (k) => { k.section(110, 280, 620, 330, "Plan", COL.blue); k.bullets(134, 360, ["☐ …", "☐ …", "☐ …", "☐ …", "☐ …"], 40, "", "auto"); },
+    (k) => { k.section(760, 370, 500, 240, "Notes"); },
+    (k) => { k.section(110, 640, 1150, 220, "Reflection", COL.orange); k.text(134, 720, "What went well? What would I change?", { fs: 16, c: COL.grey }); },
+  ) },
+  { id: "book", name: "Book / article notes", hint: "Source, key ideas, quotes, takeaways", paper: "sheet", build: () => blocks(
+    header("Title", "author · year · link"),
+    (k) => k.sticky(960, 60, 300, 150, COL.yellow, "Rating", ["☆ ☆ ☆ ☆ ☆"], 1.2),
+    (k) => { k.section(110, 190, 700, 360, "Key ideas"); k.numbered(132, 250, 656, rows(5, "…"), 1, 52); },
+    (k) => { k.box(840, 250, 420, 300, { fill: COL.sky, c: COL.blue }); k.text(860, 292, "“ Quotes ”", { fs: 30, bold: true, font: "script", c: "#1f2937" }); k.text(860, 340, "…", { fs: 16, c: "#1f2937" }); },
+    (k) => { k.section(110, 590, 700, 260, "How I'll use this", COL.green); k.bullets(134, 670, ["…", "…", "…"], 36, "→", COL.green); },
+    (k) => k.sticky(840, 600, 420, 160, COL.pink, "Questions", ["…", "…"], -1),
+  ) },
+  { id: "issues", name: "Problem log", hint: "Numbered problems with fixes and status", paper: "sheet", build: () => blocks(
+    header("Problem log", "project · date"),
+    (k) => { k.matrix(110, 190, ["#", "Problem", "Fix", "Status"], [60, 460, 460, 170], rows(8).map((_, i) => [String(i + 1), "", "", "☐ open"]), 52); },
+    (k) => k.sticky(110, 690, 560, 110, COL.pink, "Pattern", ["What keeps going wrong…"], -0.5),
+    (k) => k.sticky(700, 690, 560, 110, COL.mint, "Lesson", ["What we'll do next time…"], 0.5),
   ) },
 ];
