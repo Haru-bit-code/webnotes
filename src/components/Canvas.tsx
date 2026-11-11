@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { El, ElType, Paper, Pt } from "@/lib/types";
 import { parsePlotShort, plotInner } from "@/lib/charts";
 import { CATEGORIES, STAMPS, placeStamp } from "@/lib/stamps";
@@ -315,7 +316,10 @@ function recogniseAll(pts: Pt[], els: El[], base: { id: string; c: string; w: nu
   return null;
 }
 
-export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { initial: El[]; onChange: (els: El[]) => void; title: string; paper?: Paper; onPaper?: (p: Paper) => void }) {
+// overlay: the canvas is a transparent layer over a text note (the Scribble switch). It follows the note's
+// scroll instead of panning/zooming, and its toolbar is shown in `slot` above the note.
+export function Canvas({ initial, onChange, title, paper = "dots", onPaper, overlay }: { initial: El[]; onChange: (els: El[]) => void; title: string; paper?: Paper; onPaper?: (p: Paper) => void; overlay?: { active: boolean; slot: HTMLElement | null } }) {
+  const ov = !!overlay, ovOff = !!overlay && !overlay.active;
   const [panel, setPanel] = useState<null | "templates" | "paper" | "more" | "save">(null);
   const [cat, setCat] = useState<string>("Sketch");
   const custom = useCustomTemplates();
@@ -357,9 +361,10 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   const worldRef = useRef<SVGGElement>(null);
 
   drawRef.current = draft;
+  useEffect(() => { if (ovOff) { active.current = false; setSelIds([]); setPanel(null); } }, [ovOff]);
   // on open, scroll so the page's content starts below the floating toolbar
   useEffect(() => {
-    const list = elsRef.current; if (!list.length) return;
+    const list = elsRef.current; if (!list.length || ov) return;
     const svg = svgRef.current, dock = rootRef.current?.querySelector(".dock");
     if (!svg || !dock) return;
     const top = dock.getBoundingClientRect().bottom - svg.getBoundingClientRect().top + 20;
@@ -396,8 +401,9 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     setView((v) => { const k = Math.min(8, Math.max(0.1, v.k * f)); return { k, x: mx - ((mx - v.x) / v.k) * k, y: my - ((my - v.y) / v.k) * k }; });
   };
 
-  // wheel: pan, ctrl/pinch: zoom
+  // wheel: pan, ctrl/pinch: zoom (an overlay scrolls with its note instead)
   useEffect(() => {
+    if (ov) return;
     const svg = svgRef.current!;
     const h = (e: WheelEvent) => {
       e.preventDefault();
@@ -412,6 +418,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      if (ovOff) return;
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.code === "Space") { space.current = true; e.preventDefault(); }
@@ -486,6 +493,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     if (e.pointerType === "touch") {
       touches.current.set(e.pointerId, [e.clientX, e.clientY]);
+      if (touches.current.size === 2 && ov) { setDraft(null); drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, last: [0, scroller()?.scrollTop ?? 0] }; return; }
       if (touches.current.size === 2) { // second finger: cancel any stroke, start pinch / two-finger pan
         const [a, b] = [...touches.current.values()];
         const r = svgRef.current!.getBoundingClientRect();
@@ -501,7 +509,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     if (tool === "select" && (e.target as Element).closest?.("[data-handle]") && sb) {
       drag.current = { mode: "scale", sx: 0, sy: 0, last: p, snap: elsRef.current, box: sb, ids: selRef.current }; return;
     }
-    if (e.button === 1 || tool === "hand" || space.current || (penOnly && e.pointerType === "touch")) { drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, last: [view.x, view.y] }; return; }
+    if (e.button === 1 || tool === "hand" || space.current || (penOnly && e.pointerType === "touch")) { drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, last: ov ? [0, scroller()?.scrollTop ?? 0] : [view.x, view.y] }; return; }
     if (tool === "select") {
       const id = idAt(e.clientX, e.clientY);
       if (!id) { if (!e.shiftKey) setSel(null); setMarq({ x: p[0], y: p[1], x2: p[0], y2: p[1] }); drag.current = { mode: "marquee", sx: 0, sy: 0, last: p }; return; }
@@ -546,7 +554,10 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
       }
     }
     const d = drag.current; if (!d) return;
-    if (d.mode === "pan") { setView((v) => ({ ...v, x: d.last[0] + e.clientX - d.sx, y: d.last[1] + e.clientY - d.sy })); return; }
+    if (d.mode === "pan") {
+      if (ov) { const sc = scroller(); if (sc) sc.scrollTop = d.last[1] - (e.clientY - d.sy); return; }
+      setView((v) => ({ ...v, x: d.last[0] + e.clientX - d.sx, y: d.last[1] + e.clientY - d.sy })); return;
+    }
     const p = toWorld(e.clientX, e.clientY);
     if (d.mode === "erase") { erase(e.clientX, e.clientY); return; }
     if (d.mode === "marquee") { setMarq((m) => (m ? { ...m, x2: p[0], y2: p[1] } : m)); return; }
@@ -649,7 +660,13 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     }
   };
 
-  const centre = (): Pt => { const r = svgRef.current!.getBoundingClientRect(); return [(r.width / 2 - view.x) / view.k, (r.height / 2 - view.y) / view.k]; };
+  const scroller = () => (ov ? (rootRef.current?.closest(".reading") as HTMLElement | null) : null);
+  // middle of the part of the page you can see
+  const centre = (): Pt => {
+    const r = svgRef.current!.getBoundingClientRect(), v = scroller()?.getBoundingClientRect() ?? r;
+    const cx = (Math.max(r.left, v.left) + Math.min(r.right, v.right)) / 2 - r.left, cy = (Math.max(r.top, v.top) + Math.min(r.bottom, v.bottom)) / 2 - r.top;
+    return [(cx - view.x) / view.k, (cy - view.y) / view.k];
+  };
   const newTextStyle = () => ({ fs: 14 + width * 2, font: sketch ? ("hand" as const) : undefined, c: color });
   const firstText = (ids: string[]) => elsRef.current.filter((x) => ids.includes(x.id) && x.t === "text").sort((a, b) => a.y - b.y || a.x - b.x)[0] ?? null;
   const editText = (el: El, append = "") => {
@@ -807,18 +824,19 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     for (let i = 0; i < 200 && hit(px, py); i++) py += 24;
     const placed = placeStamp(at0, px, py);
     commit([...els, ...placed]); setSelIds(placed.map((x) => x.id)); setTool("select");
-    if (py !== cy - h / 2) setView((v) => ({ ...v, y: r.height / 2 - (py + h / 2) * v.k })); // bring it into view
+    if (ov) { const sc = scroller(); if (sc && py !== cy - h / 2) sc.scrollTop += r.top + py - sc.getBoundingClientRect().top - 80; }
+    else if (py !== cy - h / 2) setView((v) => ({ ...v, y: r.height / 2 - (py + h / 2) * v.k })); // bring it into view
     if (window.innerWidth < 768) setPanel(null);
   };
 
   return (
-    <div ref={rootRef} className="relative h-full w-full select-none overflow-hidden"
+    <div ref={rootRef} className={ov ? "canvas-overlay select-none" : "relative h-full w-full select-none overflow-hidden"} style={ovOff ? { pointerEvents: "none" } : undefined}
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; } }}
       onDrop={(e) => { const fs = Array.from(e.dataTransfer.files); if (!fs.length) return; e.preventDefault(); e.stopPropagation(); active.current = true; insertFiles(fs, toWorld(e.clientX, e.clientY)); }}>
-      {busyMsg && <div className="busy-toast" role="status">{busyMsg}</div>}
-      <svg ref={svgRef} className="h-full w-full touch-none" style={{ cursor, color: hasPage ? "#1f2937" : undefined }}
+      {!ov && busyMsg && <div className="busy-toast" role="status">{busyMsg}</div>}
+      <svg ref={svgRef} className={`h-full w-full ${ovOff ? "" : "touch-none"}`} style={{ cursor: ovOff ? undefined : cursor, color: hasPage ? "#1f2937" : undefined, pointerEvents: ovOff ? "none" : undefined, overflow: "visible" }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDouble}>
-        <PaperLayer paper={paper} view={view} />
+        {!ov && <PaperLayer paper={paper} view={view} />}
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <g ref={worldRef}>{els.filter((e) => !snapPrev?.remove.includes(e.id)).map((e) => <g key={e.id} data-id={e.id} data-lock={e.lock ? "1" : undefined}><Shape e={e} /></g>)}</g>
           {draft && <Shape e={snapPrev ? snapPrev.el : draft} />}
@@ -844,6 +862,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
         );
       })()}
 
+      {(() => {
+        const ui = <>
       <div className="dock" role="toolbar" aria-label="Drawing tools">
         <div className="dock-group">
           {TOOLS.map(([t, icon, tip]) => (
@@ -889,11 +909,11 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
         </div>
       </div>
 
-      <div className="zoom-pill">
+      {!ov && <div className="zoom-pill">
         <button aria-label="Zoom out" onClick={() => zoomBy(1 / 1.25)}><Icon name="minus" /></button>
         <button title="Reset view" onClick={() => setView({ x: 0, y: 0, k: 1 })}>{Math.round(view.k * 100)}%</button>
         <button aria-label="Zoom in" onClick={() => zoomBy(1.25)}><Icon name="plus" /></button>
-      </div>
+      </div>}
 
       {panel === "more" && (
         <div className="pop more-pop">
@@ -902,10 +922,10 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           <label className="pop-row" title="Fingers pan and zoom, only a stylus draws. Turns on by itself when a stylus is used."><span>Stylus only</span><input type="checkbox" checked={penOnly} onChange={() => setPenOnly((v) => !v)} /></label>
           {hasPage && <button className="btn mt-2 w-full" title="Let the page's boxes and lines be selected, moved and deleted" onClick={() => { commit(els.map((x) => (x.lock ? { ...x, lock: undefined } : x))); setPanel(null); }}>Unlock page background</button>}
           <div className="flex flex-wrap gap-2 pt-2">
-            <button className="btn" onClick={() => doExport("png")}><Icon name="download" /> PNG</button>
+            {!ov && <><button className="btn" onClick={() => doExport("png")}><Icon name="download" /> PNG</button>
             <button className="btn" onClick={() => doExport("svg")}><Icon name="download" /> SVG</button>
-            <button className="btn" title="One PDF page per imported PDF page, with your writing on it" onClick={() => { setPanel(null); doExport("pdf"); }}><Icon name="download" /> PDF</button>
-            <button className="btn btn-danger" onClick={() => confirm("Clear the whole page?") && commit([])}>Clear page</button>
+            <button className="btn" title="One PDF page per imported PDF page, with your writing on it" onClick={() => { setPanel(null); doExport("pdf"); }}><Icon name="download" /> PDF</button></>}
+            <button className="btn btn-danger" onClick={() => confirm(ov ? "Remove everything drawn on this note?" : "Clear the whole page?") && commit([])}>{ov ? "Clear scribbles" : "Clear page"}</button>
           </div>
         </div>
       )}
@@ -964,6 +984,11 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
             setPanel("templates"); if (!whole) setCat(category);
           }} />
       )}
+          {ov && busyMsg && <div className="busy-toast" role="status">{busyMsg}</div>}
+        </>;
+        if (!ov) return ui;
+        return overlay!.active && overlay!.slot ? createPortal(<div className="overlay-chrome">{ui}</div>, overlay!.slot) : null;
+      })()}
     </div>
   );
 }

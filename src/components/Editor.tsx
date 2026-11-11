@@ -2,8 +2,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Note } from "@/lib/types";
 import { Preview } from "./Preview";
-import { Canvas } from "./Canvas";
-import { InkLayer } from "./InkLayer";
+import { Canvas, bbox } from "./Canvas";
 import { putAsset, fmtSize } from "@/lib/assets";
 import { download, noteToDocx, noteToHtml } from "@/lib/exporters";
 import { SNIPPETS } from "@/lib/templates";
@@ -17,11 +16,14 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
   onOpenNote: (id: string) => void; onNewSketch: () => string;
   onChange: (patch: Partial<Note>) => void; onDelete: () => void; onRestore: () => void; onPurge: () => void; onWikiLink: (title: string) => void;
 }) {
-  const [mode, setModeRaw] = useState<Mode>("split");
+  // notes with scribbles open in Preview, where the scribbles are shown
+  const [mode, setModeRaw] = useState<Mode>(() => ((note.ink?.length ?? 0) > 0 ? "preview" : "split"));
   const [scribble, setScribble] = useState(false);
   const [inkSlot, setInkSlot] = useState<HTMLDivElement | null>(null);
-  const setMode = (m: Mode) => { setModeRaw(m); if (m === "edit") setScribble(false); };
-  const toggleScribble = () => { const on = !scribble; setScribble(on); if (on && mode === "edit") setModeRaw("preview"); };
+  const inkBottom = (note.ink ?? []).reduce((m, e) => { const q = bbox(e); return Math.max(m, q.y + q.h); }, 0);
+  // scribbles are placed on the full-width preview, so Scribble always uses Preview mode
+  const setMode = (m: Mode) => { setModeRaw(m); if (m !== "preview") setScribble(false); };
+  const toggleScribble = () => { const on = !scribble; setScribble(on); if (on) setModeRaw("preview"); };
   const [tagInput, setTagInput] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
 
@@ -143,7 +145,7 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
           </select>
         )}
       </div>
-      <div ref={setInkSlot} />
+      <div ref={setInkSlot} className="ink-slot" />
       <div className={`flex min-h-0 flex-1 ${note.deletedAt ? "pointer-events-none opacity-60" : ""}`}>
         {note.kind === "canvas" ? (
           <Canvas initial={note.drawing ?? []} title={note.title} onChange={(drawing) => onChange({ drawing })} paper={note.paper ?? "dots"} onPaper={(paper) => onChange({ paper })} />
@@ -158,9 +160,12 @@ export function Editor({ note, folders, notes, leading, extra, onChange, onDelet
           )}
           {mode !== "edit" && (
             <div className={`reading h-full overflow-y-auto ${mode === "split" ? "w-1/2" : "w-full"} ${scribble ? "scribbling" : ""}`}>
-              <InkLayer ink={note.ink ?? []} active={scribble} toolbarSlot={inkSlot} onChange={(ink) => onChange({ ink })}>
+              <div className="ink-wrap" style={{ minHeight: scribble ? `max(${inkBottom + 280}px, calc(100dvh - 260px))` : inkBottom + 24 }}>
                 <Preview body={note.body} notes={notes} onOpenNote={onOpenNote} onWikiLink={onWikiLink} onToggleTask={(i) => onChange({ body: toggleTask(note.body, i) })} />
-              </InkLayer>
+                {mode === "preview" && (scribble || (note.ink?.length ?? 0) > 0) && (
+                  <Canvas initial={note.ink ?? []} title={note.title} onChange={(ink) => onChange({ ink })} overlay={{ active: scribble, slot: inkSlot }} />
+                )}
+              </div>
             </div>
           )}
         </>)}
