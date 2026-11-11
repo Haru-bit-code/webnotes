@@ -4,6 +4,8 @@ import { El, ElType, Paper, Pt } from "@/lib/types";
 import { parsePlotShort, plotInner } from "@/lib/charts";
 import { CATEGORIES, STAMPS, placeStamp } from "@/lib/stamps";
 import { useCustomTemplates } from "@/lib/customTemplates";
+import { KIT_ELEMENTS } from "@/lib/kits";
+import { loadSvg } from "@/lib/svgImport";
 import { PaperLayer, PaperPicker } from "./Paper";
 import { Icon } from "./Icon";
 import rough from "roughjs";
@@ -95,7 +97,7 @@ export function Shape({ e }: { e: El }) {
   const body = <ShapeBody e={e} />;
   const b = e.shadow ? bbox(e) : null;
   const shadow = b && <rect x={b.x + 3} y={b.y + 5} width={b.w} height={b.h} rx={3} fill="#0f172a" opacity={0.13} />;
-  if (!e.rot) return shadow ? <>{shadow}{body}</> : body;
+  if (!e.rot) { const inner = shadow ? <>{shadow}{body}</> : body; return e.op !== undefined ? <g opacity={e.op}>{inner}</g> : inner; }
   const c = e.rc ?? (() => { const q = bbox(e); return [q.x + q.w / 2, q.y + q.h / 2]; })();
   return <g transform={`rotate(${e.rot} ${c[0]} ${c[1]})`}>{shadow}{body}</g>;
 }
@@ -153,7 +155,12 @@ function ShapeBody({ e }: { e: El }) {
         {e.t === "arrow" && <path d={`M${e.x2! - hl * Math.cos(ang - 0.45)} ${e.y2! - hl * Math.sin(ang - 0.45)}L${e.x2} ${e.y2}L${e.x2! - hl * Math.cos(ang + 0.45)} ${e.y2! - hl * Math.sin(ang + 0.45)}`} {...common} />}
         <line x1={e.x} y1={e.y} x2={e.x2} y2={e.y2} stroke="transparent" strokeWidth={14} /></>;
     }
-    case "rect": return <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={3} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
+    case "rect": return <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={e.rx ?? 3} {...common} stroke={e.w ? s : "none"} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
+    case "path": {
+      const [ox, oy, ow, oh] = e.ob ?? [0, 0, 1, 1], sx = (e.x2! - e.x) / ow, sy = (e.y2! - e.y) / oh;
+      return <path d={e.d} transform={`translate(${e.x - ox * sx} ${e.y - oy * sy}) scale(${sx} ${sy})`} stroke={e.w ? s : "none"} strokeWidth={e.w / Math.max(Math.abs(sx), 1e-6)}
+        fill={fillOf(e)} fillOpacity={fillOp(e)} strokeLinecap="round" strokeLinejoin="round" />;
+    }
     case "ellipse": return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
     case "diamond": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h / 2}L${b.x + b.w / 2} ${b.y + b.h}L${b.x} ${b.y + b.h / 2}Z`} {...common} fill={fillOf(e)} fillOpacity={fillOp(e)} />;
     case "triangle": return <path d={`M${b.x + b.w / 2} ${b.y}L${b.x + b.w} ${b.y + b.h}L${b.x} ${b.y + b.h}Z`} {...common} fill="transparent" />;
@@ -348,7 +355,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     const top = dock.getBoundingClientRect().bottom - svg.getBoundingClientRect().top + 20;
     const bs = list.map(bbox), minY = Math.min(...bs.map((q) => q.y)), minX = Math.min(...bs.map((q) => q.x)), maxX = Math.max(...bs.map((q) => q.x + q.w));
     const avail = svg.getBoundingClientRect().width - 32, wide = Math.max(0, maxX) - Math.min(0, minX);
-    const k = wide > avail ? Math.max(0.45, avail / wide) : 1; // zoom out so the whole width fits
+    const k = wide > avail ? Math.max(0.2, avail / wide) : 1; // zoom out so the whole width fits
     setView({ k, x: minX * k < 16 ? 16 - minX * k : 0, y: Math.max(0, top - minY * k) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -405,7 +412,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
       else if (e.key === "Escape") setSel(null);
       if (!active.current || e.defaultPrevented) return;
       const ids = selRef.current, cur = elsRef.current;
-      if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); setSelIds(cur.map((x) => x.id)); setTool("select"); }
+      if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); setSelIds(cur.filter((x) => !x.lock).map((x) => x.id)); setTool("select"); }
       else if (mod && e.key.toLowerCase() === "d" && ids.length) { e.preventDefault(); pasteEls(cur.filter((x) => ids.includes(x.id))); }
       else if (ids.length && e.key.startsWith("Arrow")) {
         e.preventDefault(); const st = e.shiftKey ? 10 : 1;
@@ -452,7 +459,15 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
     };
   });
 
-  const idAt = (x: number, y: number) => (document.elementFromPoint(x, y)?.closest("[data-id]") as HTMLElement | null)?.dataset.id ?? null;
+  // topmost item under the pointer, looking through locked template backgrounds
+  const idAt = (x: number, y: number) => {
+    for (const n of document.elementsFromPoint(x, y)) {
+      const h = n.closest("[data-id]") as HTMLElement | null;
+      if (h && !h.dataset.lock && rootRef.current?.contains(h)) return h.dataset.id ?? null;
+      if (n === svgRef.current) return null;
+    }
+    return null;
+  };
 
   const onDown = (e: React.PointerEvent) => {
     if (textBox) return;
@@ -573,7 +588,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
       const m = marq; setMarq(null); if (!m) return;
       const x0 = Math.min(m.x, m.x2), x1 = Math.max(m.x, m.x2), y0 = Math.min(m.y, m.y2), y1 = Math.max(m.y, m.y2);
       if (x1 - x0 < 4 && y1 - y0 < 4) return;
-      const inside = elsRef.current.filter((x) => { const q = bbox(x); return q.x >= x0 && q.y >= y0 && q.x + q.w <= x1 && q.y + q.h <= y1; }).map((x) => x.id);
+      const inside = elsRef.current.filter((x) => { if (x.lock) return false; const q = bbox(x); return q.x >= x0 && q.y >= y0 && q.x + q.w <= x1 && q.y + q.h <= y1; }).map((x) => x.id);
       setSelIds((cur) => [...new Set([...cur, ...withGroups(inside)])]);
       return;
     }
@@ -694,12 +709,22 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
   const btn = "btn icon-btn ghost cbtn";
   const delSel = () => { if (selIds.length) { commit(els.filter((x) => !selIds.includes(x.id))); setSel(null); } };
   const selEls = els.filter((x) => selIds.includes(x.id));
+  const hasPage = els.some((x) => x.lock); // template pages are light paper: ink stays dark even in dark mode
   const oneGroup = selEls.length > 0 && !!selEls[0].g && selEls.every((x) => x.g === selEls[0].g);
   const applyStyle = (on: boolean) => { setSketch(on); if (selEls.length) commit(els.map((x) => selIds.includes(x.id) ? (x.t === "text" ? { ...x, font: on ? x.font ?? "hand" : x.font === "hand" ? undefined : x.font } : ["rect", "ellipse", "diamond", "triangle", "poly", "line", "arrow"].includes(x.t) ? { ...x, sk: on ? x.sk || 1.1 : undefined } : x) : x)); };
 
   // templates: build each once for the thumbnails
   const built = useMemo(() => STAMPS.map((st) => ({ ...st, els: st.build() })), []);
-  const cats = [...custom.cats, ...CATEGORIES];
+  const cats = [...custom.cats, ...CATEGORIES, "Stickers", "Visuals"];
+  const kitCat = cat === "Stickers" || cat === "Visuals";
+  const insertKit = async (src: string, name: string) => {
+    try {
+      let list = await loadSvg(src, { group: true });
+      const bs = list.map(bbox), w = Math.max(...bs.map((q) => q.x + q.w)) - Math.min(...bs.map((q) => q.x));
+      if (w > 420 || w < 140) { const k = (w > 420 ? 420 : 160) / w, x0 = Math.min(...bs.map((q) => q.x)), y0 = Math.min(...bs.map((q) => q.y)); list = list.map((e) => scaleEl(e, x0, y0, k)); }
+      insertStamp(list);
+    } catch { alert(`Couldn't add "${name}". Check your connection and try again.`); }
+  };
   const shown = [
     ...custom.list.filter((t) => t.kind === "block" && t.cat === cat).map((t) => ({ key: t.id, name: t.name, els: t.els, mine: t.id })),
     ...built.map((st, i) => ({ key: "b" + i, name: st.name, els: st.els, cat: st.cat, i })).filter((x) => x.cat === cat).map((x) => ({ key: x.key, name: x.name, els: x.els, mine: undefined as string | undefined, i: x.i })),
@@ -722,11 +747,11 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
 
   return (
     <div ref={rootRef} className="relative h-full w-full select-none overflow-hidden">
-      <svg ref={svgRef} className="h-full w-full touch-none" style={{ cursor }}
+      <svg ref={svgRef} className="h-full w-full touch-none" style={{ cursor, color: hasPage ? "#1f2937" : undefined }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDouble}>
         <PaperLayer paper={paper} view={view} />
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-          <g ref={worldRef}>{els.filter((e) => !snapPrev?.remove.includes(e.id)).map((e) => <g key={e.id} data-id={e.id}><Shape e={e} /></g>)}</g>
+          <g ref={worldRef}>{els.filter((e) => !snapPrev?.remove.includes(e.id)).map((e) => <g key={e.id} data-id={e.id} data-lock={e.lock ? "1" : undefined}><Shape e={e} /></g>)}</g>
           {draft && <Shape e={snapPrev ? snapPrev.el : draft} />}
           {marq && <rect x={Math.min(marq.x, marq.x2)} y={Math.min(marq.y, marq.y2)} width={Math.abs(marq.x2 - marq.x)} height={Math.abs(marq.y2 - marq.y)} fill="var(--accent)" fillOpacity={0.06} stroke="var(--accent)" strokeDasharray="4 3" strokeWidth={1 / view.k} pointerEvents="none" />}
           {sb && tool === "select" && !textBox && <rect data-handle="se" x={sb.x + sb.w + 6 - 7 / view.k} y={sb.y + sb.h + 6 - 7 / view.k} width={14 / view.k} height={14 / view.k} rx={3 / view.k} fill="var(--raised)" stroke="var(--accent)" strokeWidth={2 / view.k} style={{ cursor: "nwse-resize" }} />}
@@ -804,6 +829,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           <label className="pop-row" title="Higher = smoother lines for a shaky mouse or trackpad"><span>Smoothing</span><input type="range" className="range w-24" min={0} max={9} value={smooth} onChange={(e) => setSmooth(+e.target.value)} /></label>
           <label className="pop-row"><span>Snap shapes to grid</span><input type="checkbox" checked={snapGrid} onChange={() => setSnapGrid((v) => !v)} /></label>
           <label className="pop-row" title="Fingers pan and zoom, only a stylus draws. Turns on by itself when a stylus is used."><span>Stylus only</span><input type="checkbox" checked={penOnly} onChange={() => setPenOnly((v) => !v)} /></label>
+          {hasPage && <button className="btn mt-2 w-full" title="Let the page's boxes and lines be selected, moved and deleted" onClick={() => { commit(els.map((x) => (x.lock ? { ...x, lock: undefined } : x))); setPanel(null); }}>Unlock page background</button>}
           <div className="flex flex-wrap gap-2 pt-2">
             <button className="btn" onClick={() => doExport("png")}><Icon name="download" /> PNG</button>
             <button className="btn" onClick={() => doExport("svg")}><Icon name="download" /> SVG</button>
@@ -825,7 +851,14 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
           <div className="stamp-cats">
             {cats.map((c) => <button key={c} className={`chip-btn ${cat === c ? "on" : ""} ${custom.cats.includes(c) ? "mine" : ""}`} onClick={() => setCat(c)}>{c}</button>)}
           </div>
-          <div className="stamp-grid">
+          {kitCat ? <div className="stamp-grid kit-grid">
+            {KIT_ELEMENTS.filter((k) => k.cat === cat).map((k) => (
+              <button key={k.src} className="stamp" onClick={() => insertKit(k.src, k.name)} title={`Insert ${k.name}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={k.src} alt="" loading="lazy" /><span>{k.name}</span>
+              </button>
+            ))}
+          </div> : <div className="stamp-grid">
             {shown.map((st) => (
               <div key={st.key} className="stamp-wrap">
                 <button className="stamp" onClick={() => insertStamp(st.mine ? st.els : STAMPS[(st as { i: number }).i].build())} title={`Insert ${st.name}`}>
@@ -836,7 +869,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper }: { 
               </div>
             ))}
             {shown.length === 0 && <p className="muted col-span-2 text-sm">No templates here yet.</p>}
-          </div>
+          </div>}
           <div className="stamp-foot">
             <span className="flex-1">Tap to drop it on the page. Double-click any text to change it, or inside a box or cell to type there. Drag the corner handle to resize.</span>
           </div>

@@ -1,6 +1,6 @@
 export type Pt = [number, number];
 
-export type ElType = "pen" | "hl" | "line" | "arrow" | "rect" | "ellipse" | "text" | "axes" | "plot" | "diamond" | "triangle" | "cube" | "poly";
+export type ElType = "pen" | "hl" | "line" | "arrow" | "rect" | "ellipse" | "text" | "axes" | "plot" | "diamond" | "triangle" | "cube" | "poly" | "path";
 
 // One drawing object on a canvas note. Coordinates are in world space.
 export type El = {
@@ -22,6 +22,10 @@ export type El = {
   dash?: boolean;                                  // dashed outline
   rot?: number; rc?: Pt;                           // rotation in degrees around rc (sticky notes)
   shadow?: boolean;                                // soft drop shadow (sticky notes)
+  d?: string; ob?: [number, number, number, number]; // path: SVG path data and its own bounds (x, y, w, h)
+  rx?: number;                                     // rect corner radius
+  op?: number;                                     // opacity 0..1
+  lock?: boolean;                                  // part of a page template background: not selectable
 };
 
 export type Paper = "blank" | "dots" | "grid" | "graph" | "ruled-narrow" | "ruled" | "ruled-wide" | "handwriting" | "cornell" | "isometric" | "music" | "sheet";
