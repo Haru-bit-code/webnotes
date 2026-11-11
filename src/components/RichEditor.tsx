@@ -8,12 +8,33 @@ import { Icon } from "./Icon";
 
 const cmd = (c: string, v?: string) => document.execCommand(c, false, v);
 
+// mid-tone colours that stay readable on both the light and the dark theme
+const TEXT_COLORS: [string, string][] = [["Red", "#e5484d"], ["Orange", "#f76b15"], ["Amber", "#d6a100"], ["Green", "#30a46c"], ["Teal", "#12a594"], ["Blue", "#3e7bfa"], ["Purple", "#8e4ec6"], ["Pink", "#d6409f"], ["Grey", "#8b8d98"]];
+// see-through highlights, so the text keeps its own colour on either theme
+const HIGHLIGHTS: [string, string][] = [["Yellow", "rgba(250, 204, 21, 0.38)"], ["Green", "rgba(48, 164, 108, 0.32)"], ["Blue", "rgba(62, 123, 250, 0.3)"], ["Pink", "rgba(214, 64, 159, 0.3)"], ["Orange", "rgba(247, 107, 21, 0.32)"], ["Purple", "rgba(142, 78, 198, 0.3)"]];
+
 export function RichEditor({ html, onChange, readOnly, toolbarless, children, wrapStyle }: {
   html: string; onChange: (html: string, text: string) => void; readOnly?: boolean; toolbarless?: boolean; children?: React.ReactNode; wrapStyle?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const last = useRef<string>("");
   const [state, setState] = useState<Record<string, boolean | string>>({});
+  const [palette, setPalette] = useState<null | "text" | "mark">(null);
+  const [lastText, setLastText] = useState("#e5484d"), [lastMark, setLastMark] = useState(HIGHLIGHTS[0][1]);
+  useEffect(() => {
+    if (!palette) return;
+    const close = (e: Event) => { if (!(e.target as HTMLElement).closest?.(".color-pop, .color-btn")) setPalette(null); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setPalette(null); };
+    document.addEventListener("pointerdown", close); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", esc); };
+  }, [palette]);
+  // colour the selected text (spans with inline style, so it can be saved and exported)
+  const paint = (kind: "text" | "mark", color: string | null) => {
+    ref.current?.focus(); cmd("styleWithCSS", "true");
+    if (kind === "text") { cmd("foreColor", color ?? "inherit"); if (color) setLastText(color); }
+    else { cmd("hiliteColor", color ?? "transparent"); if (color) setLastMark(color); }
+    cmd("styleWithCSS", "false"); save(); refresh(); setPalette(null);
+  };
 
   // load content (and again only if it changed from outside, e.g. the AI panel added text)
   useEffect(() => {
@@ -35,6 +56,7 @@ export function RichEditor({ html, onChange, readOnly, toolbarless, children, wr
     bold: document.queryCommandState("bold"), italic: document.queryCommandState("italic"), underline: document.queryCommandState("underline"),
     strike: document.queryCommandState("strikeThrough"), ul: document.queryCommandState("insertUnorderedList"), ol: document.queryCommandState("insertOrderedList"),
     block: (document.queryCommandValue("formatBlock") || "p").toLowerCase(),
+    color: document.queryCommandValue("foreColor") || "",
   });
   const run = (c: string, v?: string) => { ref.current?.focus(); cmd(c, v); save(); refresh(); };
   const insertHtml = (h: string) => { ref.current?.focus(); cmd("insertHTML", h); resolveImages(); save(); };
@@ -79,7 +101,31 @@ export function RichEditor({ html, onChange, readOnly, toolbarless, children, wr
           </select>
           <span className="rich-sep" />
           {B("bold", "bold", "Bold (⌘B)", !!state.bold)}{B("italic", "italic", "Italic (⌘I)", !!state.italic)}{B("underline", "underline", "Underline (⌘U)", !!state.underline)}{B("strikeThrough", "strike", "Strikethrough", !!state.strike)}
-          {B("hilite", "marker", "Highlight", false, () => { ref.current?.focus(); cmd("styleWithCSS", "true"); cmd("hiliteColor", "#fde68a"); cmd("styleWithCSS", "false"); save(); })}
+          {/* text colour: the letter A underlined with the colour; the arrow opens the palette */}
+          <span className="color-btn">
+            <button type="button" className="btn icon-btn ghost" title="Text colour" aria-label="Text colour" onMouseDown={(e) => e.preventDefault()} onClick={() => paint("text", lastText)}>
+              <span className="color-a" style={{ borderColor: lastText }}>A</span>
+            </button>
+            <button type="button" className="btn ghost color-more" aria-label="More text colours" aria-expanded={palette === "text"} onMouseDown={(e) => e.preventDefault()} onClick={() => setPalette(palette === "text" ? null : "text")}><Icon name="chevron" /></button>
+            {palette === "text" && (
+              <div className="color-pop" role="menu" aria-label="Text colour">
+                <button type="button" className="color-default" role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => paint("text", null)}>Default colour</button>
+                <div className="color-grid">{TEXT_COLORS.map(([n, c]) => <button key={c} type="button" role="menuitem" className="swatch" title={n} aria-label={n} style={{ background: c }} onMouseDown={(e) => e.preventDefault()} onClick={() => paint("text", c)} />)}</div>
+              </div>
+            )}
+          </span>
+          <span className="color-btn">
+            <button type="button" className="btn icon-btn ghost" title="Highlight" aria-label="Highlight" onMouseDown={(e) => e.preventDefault()} onClick={() => paint("mark", lastMark)}>
+              <span className="color-mark" style={{ background: lastMark }}><Icon name="marker" /></span>
+            </button>
+            <button type="button" className="btn ghost color-more" aria-label="More highlight colours" aria-expanded={palette === "mark"} onMouseDown={(e) => e.preventDefault()} onClick={() => setPalette(palette === "mark" ? null : "mark")}><Icon name="chevron" /></button>
+            {palette === "mark" && (
+              <div className="color-pop" role="menu" aria-label="Highlight colour">
+                <button type="button" className="color-default" role="menuitem" onMouseDown={(e) => e.preventDefault()} onClick={() => paint("mark", null)}>No highlight</button>
+                <div className="color-grid">{HIGHLIGHTS.map(([n, c]) => <button key={c} type="button" role="menuitem" className="swatch" title={n} aria-label={`${n} highlight`} style={{ background: c }} onMouseDown={(e) => e.preventDefault()} onClick={() => paint("mark", c)} />)}</div>
+              </div>
+            )}
+          </span>
           <span className="rich-sep" />
           {B("insertUnorderedList", "ul", "Bulleted list", !!state.ul)}{B("insertOrderedList", "ol", "Numbered list", !!state.ol)}{B("check", "check", "Checklist", false, checklist)}
           {B("justifyLeft", "alignL", "Align left")}{B("justifyCenter", "alignC", "Align centre")}

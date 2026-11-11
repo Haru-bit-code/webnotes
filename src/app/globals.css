@@ -404,3 +404,17 @@ svg.touch-none { -webkit-touch-callout: none; -webkit-user-select: none; user-se
 .empty-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
 @media (max-width: 640px) { .type-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .type-tile small { display: none; } .empty-sheet { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .type-tile { transition: none; } .type-tile:hover { transform: none; } }
+
+/* document toolbar: text colour and highlight palettes */
+.color-btn { position: relative; display: inline-flex; align-items: center; }
+.color-btn .color-more { width: 16px; min-width: 16px; padding: 0; height: 32px; margin-left: -4px; }
+.color-btn .color-more svg { width: 12px; height: 12px; }
+.color-a { display: inline-block; font-weight: 700; font-size: 15px; line-height: 15px; padding: 0 2px 1px; border-bottom: 3px solid; }
+.color-mark { display: inline-grid; place-items: center; border-radius: 4px; padding: 2px; }
+.color-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 188px; padding: 8px; background: var(--raised); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); }
+.color-default { width: 100%; padding: 6px 8px; margin-bottom: 6px; border-radius: 6px; text-align: left; font-size: 13px; color: var(--text); }
+.color-default:hover { background: var(--chip); }
+.color-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.swatch { aspect-ratio: 1; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--text) 15%, transparent); cursor: pointer; transition: transform .12s; }
+.swatch:hover, .swatch:focus-visible { transform: scale(1.12); outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .swatch { transition: none; } }

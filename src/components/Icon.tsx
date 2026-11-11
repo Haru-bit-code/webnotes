@@ -55,6 +55,7 @@ const P: Record<string, React.ReactNode> = {
   link: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
   table: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M3 15h18M10 4v16" /></>,
   marker: <path d="M15 4l5 5-9 9H7v-4zM4 21h16" />,
+  chevron: <path d="M7 10l5 5 5-5" />,
   clear: <path d="M6 5h12M12 5l-3 14M4 20l16-16" />,
   alignL: <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />,
   alignC: <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />,

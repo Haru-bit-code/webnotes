@@ -24,12 +24,32 @@ export const LANG_EXT: Record<string, string> = { plaintext: "txt", javascript: 
 
 /** rich text: keep safe formatting only (alignment and colours survive); stored images keep their asset id */
 let richMode = false, hooked = false;
+/** true for black, white and greys (and transparent): colours that only mean "normal text" or "page" */
+function isNeutral(value: string) {
+  const v = value.trim().toLowerCase().replace(/\s*!important$/, "");
+  if (/^(black|white|inherit|initial|currentcolor|transparent|windowtext|canvastext)$/.test(v)) return true;
+  let r: number, g: number, b: number, a = 1;
+  const hex = /^#([0-9a-f]{3,8})$/.exec(v);
+  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/.exec(v);
+  if (hex) { let h = hex[1]; if (h.length <= 4) h = h.split("").map((c) => c + c).join(""); [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); if (h.length === 8) a = parseInt(h.slice(6, 8), 16) / 255; }
+  else if (rgb) { [r, g, b] = [rgb[1], rgb[2], rgb[3]].map(Number); if (rgb[4]) a = rgb[4].endsWith("%") ? parseFloat(rgb[4]) / 100 : Number(rgb[4]); }
+  else return false;
+  if (a < 0.05) return true;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  return mx - mn < 24 && (mx < 110 || mn > 200); // greyish and either dark or light
+}
 const KEEP_CSS = /^(text-align|color|background-color)$/;
 export function cleanHtml(html: string) {
   if (!hooked) {
     DOMPurify.addHook("uponSanitizeAttribute", (_n, data) => {
       if (!richMode || data.attrName !== "style") return;
-      data.attrValue = data.attrValue.split(";").map((d) => d.trim()).filter((d) => KEEP_CSS.test(d.split(":")[0]?.trim().toLowerCase() ?? "")).join("; ");
+      data.attrValue = data.attrValue.split(";").map((d) => d.trim()).filter((d) => {
+        const [k, ...v] = d.split(":"); const prop = k?.trim().toLowerCase() ?? "";
+        if (!KEEP_CSS.test(prop)) return false;
+        // black / white / grey text or white page backgrounds that came with pasted or imported text are not real
+        // colours: dropping them lets the text follow the light/dark theme instead of disappearing
+        return prop === "text-align" || !isNeutral(v.join(":"));
+      }).join("; ");
       if (!data.attrValue) data.keepAttr = false;
     });
     hooked = true;
