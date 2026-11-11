@@ -10,7 +10,7 @@ export type El = {
   pts?: Pt[];                                      // pen, hl
   c: string;                                       // colour, "auto" = follows theme
   w: number;                                       // stroke width
-  text?: string; fs?: number;                      // text
+  text?: string; fs?: number; lh?: number;  // lh: line spacing (text written on ruled lines)                      // text
   expr?: string;                                   // plot: "sin(x); x^2/9 @ -6..6"
   dx?: number; dy?: number;                        // cube: depth offset of the back face
   head?: boolean;                                  // pen: draw an arrowhead at the end (curved arrow)
