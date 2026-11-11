@@ -142,7 +142,7 @@ select option { background: var(--raised); color: var(--text); }
 /* empty state: a sheet of graph paper waiting to be written on */
 .empty-main { display: grid; place-items: center; height: 100%; padding: 24px;
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 24px 24px; }
-.empty-sheet { width: min(440px, 100%); padding: 36px 32px 28px; text-align: center; background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); transform: rotate(-.6deg); }
+.empty-sheet { width: min(620px, 100%); padding: 36px 32px 28px; text-align: center; background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); transform: rotate(-.6deg); }
 .empty-title { font-family: var(--font-display); font-size: 25px; line-height: 1.25; margin-bottom: 20px; }
 .shortcuts { display: flex; justify-content: center; gap: 20px; margin-top: 26px; padding-top: 18px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--muted); }
 .shortcuts div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -391,3 +391,17 @@ svg.touch-none { -webkit-touch-callout: none; -webkit-user-select: none; user-se
 .md a.wikilink.missing { opacity: .65; border-bottom-style: dotted; }
 .md input[data-task] { margin-right: .25rem; cursor: pointer; }
 .md input[data-task]:disabled { cursor: default; }
+
+/* empty state: one tile per note type */
+.type-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; text-align: left; }
+.type-tile { display: grid; text-align: left; justify-items: start; align-content: start; grid-template-columns: 20px 1fr; column-gap: 10px; row-gap: 2px; align-items: start; padding: 12px 12px 13px; border: 1px solid var(--border); border-radius: var(--r); background: var(--bg); color: var(--text); cursor: pointer; transition: border-color .15s, background .15s, transform .15s; }
+.type-tile svg { grid-row: span 2; width: 18px; height: 18px; margin-top: 1px; color: var(--muted); }
+.type-tile b { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.type-tile small { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.type-tile:hover { border-color: var(--accent); transform: translateY(-1px); }
+.type-tile:hover svg, .type-tile.on svg { color: var(--accent); }
+.type-tile.on { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+.type-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.empty-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+@media (max-width: 640px) { .type-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .type-tile small { display: none; } .empty-sheet { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .type-tile { transition: none; } .type-tile:hover { transform: none; } }

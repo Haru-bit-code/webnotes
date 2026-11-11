@@ -227,12 +227,22 @@ export default function Home() {
         ) : (
           <div className="empty-main">
             <div className="empty-sheet">
-              <p className="empty-title">Pick a note, or start a new page.</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                <button className="btn btn-primary" onClick={() => newNote(newNoteOf(settings.newFormat ?? "markdown"))}><Icon name="notes" /> New {FORMATS.find((f) => f.id === (settings.newFormat ?? "markdown"))!.label.toLowerCase()}</button>
-                <button className="btn" onClick={() => setPickPaper(true)}><Icon name="scribble" /> New scribble page</button>
-                <button className="btn" onClick={pickFiles}><Icon name="upload" /> Import file</button>
+              <p className="empty-title">Pick a note, or start something new.</p>
+              <div className="type-tiles" role="list" aria-label="New note type">
+                {FORMATS.map((f) => {
+                  const def = f.id === (settings.newFormat ?? "markdown");
+                  return (
+                    <button key={f.id} role="listitem" className={`type-tile ${def ? "on" : ""}`} title={f.hint}
+                      onClick={() => (f.id === "scribble" ? setPickPaper(true) : newNote(newNoteOf(f.id)))}>
+                      <Icon name={f.icon} />
+                      <b>{f.label}{def && <span className="default-tag">default</span>}</b>
+                      <small>{f.hint}</small>
+                    </button>
+                  );
+                })}
               </div>
+              <button className="btn mt-3" onClick={pickFiles}><Icon name="upload" /> Import a file</button>
+              <p className="empty-note">Word, PDF, Excel, PowerPoint, images, code and more. Each opens as its own type.</p>
               <dl className="shortcuts">
                 <div><dt><kbd>⌘</kbd><kbd>J</kbd></dt><dd>AI assistant</dd></div>
                 <div><dt><kbd>⌘</kbd><kbd>\</kbd></dt><dd>Focus mode</dd></div>
