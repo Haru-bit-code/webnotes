@@ -28,6 +28,8 @@ export type El = {
   lock?: boolean;                                  // part of a page template background: not selectable
   src?: string;                                    // image: id of the file in the asset store
   pg?: [number, number, number];                   // imported PDF page: index, width and height in points
+  wr?: 1;                                          // text: written into a template's cell, line or box
+  tl?: 1;                                          // text: one of a page template's own labels
 };
 
 export type Paper = "blank" | "dots" | "grid" | "graph" | "ruled-narrow" | "ruled" | "ruled-wide" | "handwriting" | "cornell" | "isometric" | "music" | "sheet";

@@ -29,9 +29,9 @@ async def main():
       await pg.click(".overlay-chrome [aria-label='Arrow']"); await pg.mouse.move(ov["x"]+500,ov["y"]+200); await pg.mouse.down(); await pg.mouse.move(ov["x"]+420,ov["y"]+120,steps=6); await pg.mouse.up()
       # templates: sketch sticky, table, chart, sticker
       await pg.click(".overlay-chrome button:has-text('Templates')"); await pg.wait_for_timeout(300)
-      for cat,name in [("Sketch","Sticky · idea"),("Tables","Table 3 × 4"),("Charts","Bar chart"),("Diagrams","Flowchart")]:
+      for cat,name in [("Hand-drawn","Sticky · idea"),("Tables","Table 3 × 4"),("Charts & maths","Bar chart"),("Diagrams","Flowchart")]:
         await pg.click(f".overlay-chrome .chip-btn:text-is('{cat}')"); await pg.locator(f".overlay-chrome .stamp:has(span:text-is('{name}'))").click(); await pg.wait_for_timeout(150)
-      await pg.click(".overlay-chrome .chip-btn:text-is('Stickers')"); await pg.wait_for_timeout(400); await pg.locator(".overlay-chrome .kit-grid .stamp").first.click(); await pg.wait_for_timeout(500)
+      await pg.click(".overlay-chrome .tpl-shelves button:has-text('Stickers')"); await pg.wait_for_timeout(400); await pg.locator(".overlay-chrome .kit-grid .stamp").first.click(); await pg.wait_for_timeout(500)
       await pg.click(".overlay-chrome [aria-label='Close templates']")
       # type text on the document
       await pg.click(".overlay-chrome [aria-label^='Select']"); await pg.mouse.click(ov["x"]+600, ov["y"]+60); await pg.keyboard.type("Typed over the document"); await pg.keyboard.press("Escape"); await pg.wait_for_timeout(300)
@@ -50,7 +50,7 @@ async def main():
     # scrolled document: template lands in the visible part
     await pg.locator(".note-card:has(.note-card-title:text-is('Review'))").first.click(); await pg.wait_for_timeout(500)
     await pg.click("[role=switch]"); await pg.evaluate("document.querySelector('.reading').scrollTop=600"); await pg.wait_for_timeout(200)
-    await pg.click(".overlay-chrome button:has-text('Templates')"); await pg.click(".overlay-chrome .chip-btn:text-is('Sketch')"); await pg.locator(".overlay-chrome .stamp:has(span:text-is('Sticky · to do'))").click(); await pg.wait_for_timeout(300)
+    await pg.click(".overlay-chrome button:has-text('Templates')"); await pg.click(".overlay-chrome .chip-btn:text-is('Hand-drawn')"); await pg.locator(".overlay-chrome .stamp:has(span:text-is('Sticky · to do'))").click(); await pg.wait_for_timeout(300)
     ink=(await note(pg,"Review"))["ink"]; last=[e for e in ink if e["t"]=="rect"][-1]
     st=await pg.evaluate("document.querySelector('.reading').scrollTop")
     ok("template lands where you are looking", last["y"]>400, f"y={last['y']:.0f} scroll={st}")
@@ -58,8 +58,8 @@ async def main():
     await pg.click(".overlay-chrome [aria-label='Close templates']"); await pg.click("[role=switch]")
     await pg.locator(".note-card:has(.note-card-title:text-is('Physics Notes'))").first.click(); await pg.wait_for_timeout(1000)
     n0=len((await note(pg,"Physics Notes"))["drawing"])
-    await pg.click("button:has-text('Templates')"); await pg.click(".chip-btn:text-is('Sketch')"); await pg.locator(".stamp:has(span:text-is('Sticky · remember'))").click(); await pg.wait_for_timeout(200)
-    await pg.click(".chip-btn:text-is('Charts')"); await pg.locator(".stamp:has(span:text-is('Pie chart'))").click(); await pg.wait_for_timeout(200)
+    await pg.click("button:has-text('Templates')"); await pg.click(".chip-btn:text-is('Hand-drawn')"); await pg.locator(".stamp:has(span:text-is('Sticky · remember'))").click(); await pg.wait_for_timeout(200)
+    await pg.click(".chip-btn:text-is('Charts & maths')"); await pg.locator(".stamp:has(span:text-is('Pie chart'))").click(); await pg.wait_for_timeout(200)
     ok("PDF page: templates go on top of the pages", len((await note(pg,"Physics Notes"))["drawing"])>n0+5)
     await pg.click("[aria-label='Close templates']"); await pg.wait_for_timeout(200); await pg.screenshot(path=f"{D}/pdf.png")
     # phone (same browser context so stored files are shared)

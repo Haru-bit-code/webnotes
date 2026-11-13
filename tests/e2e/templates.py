@@ -11,7 +11,7 @@ async def main():
     await pg.goto(BASE); await pg.wait_for_timeout(800)
     await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(1500)
     await pg.screenshot(path=f"{D}/01-library.png")
-    n=await pg.locator(".lib-grid .layout-opt").count(); ok("library lists all templates", n==240, str(n))
+    n=await pg.locator(".lib-grid .layout-opt").count(); ok("library lists all templates", n==250, str(n))
     # search
     await pg.fill("input[aria-label='Search templates']", "cornell"); await pg.wait_for_timeout(200)
     ok("search filters", 0<await pg.locator(".lib-grid .layout-opt").count()<10)
@@ -23,8 +23,8 @@ async def main():
     for c in cats[1:]:
       await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(300)
       await pg.click(f".stamp-cats .chip-btn:text-is('{c}')"); await pg.wait_for_timeout(200)
-      title=await pg.locator(".lib-grid .layout-opt b").first.inner_text()
-      await pg.locator(".lib-grid .layout-opt").first.click(); await pg.wait_for_timeout(900)
+      title=await pg.locator(".lib-grid .layout-opt:has(.lib-thumb) b").first.inner_text()
+      await pg.locator(".lib-grid .layout-opt:has(.lib-thumb)").first.click(); await pg.wait_for_timeout(900)
       E=await drawing(pg); texts=[x for x in E if x["t"]=="text"]; locked=[x for x in E if x.get("lock")]
       if len(E)<5 or not texts or not locked: bad.append(f"{c}:{len(E)}")
       await pg.screenshot(path=f"{D}/10-{c.replace(' ','_').replace('&','and')}.png")
@@ -41,7 +41,8 @@ async def main():
     ok("background is not selectable", await pg.locator("[data-handle]").count()==0)
     # type on the page
     await pg.keyboard.type("my note"); await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
-    ok("typing on template page", any(x.get("text")=="my note" for x in await drawing(pg)))
+    ok("typing on template page", any("my note" in (x.get("text") or "") for x in await drawing(pg)), str([x.get("text") for x in await drawing(pg) if x["t"]=="text"][-6:]))
+    await pg.screenshot(path=f"{D}/12-typed.png")
     # pen on page
     await pg.click("[aria-label^='Pen']"); await pg.mouse.move(600,620); await pg.mouse.down(); await pg.mouse.move(800,660,steps=8); await pg.mouse.up(); await pg.wait_for_timeout(200)
     ok("drawing on template page", any(x["t"]=="pen" for x in await drawing(pg)))
@@ -54,6 +55,7 @@ async def main():
     # stickers & visuals
     await pg.click("[aria-label^='Select']"); await pg.click("button:has-text('Templates')"); await pg.wait_for_timeout(300)
     total=0; badS=[]
+    await pg.click(".tpl-shelves button:has-text('Stickers')")
     for c in ["Stickers","Visuals"]:
       await pg.click(f".stamp-cats .chip-btn:text-is('{c}')"); await pg.wait_for_timeout(600); await pg.screenshot(path=f"{D}/30-{c}.png")
       k=await pg.locator(".kit-grid .stamp").count()

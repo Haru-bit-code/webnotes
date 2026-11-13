@@ -13,7 +13,7 @@ async def main():
     await pg.goto(BASE); await pg.wait_for_timeout(1000)
     # --- 1. layout page
     await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(400)
-    await pg.click("[role=tab]:has-text('Hand-drawn')"); await pg.click(".layout-opt:has-text('Meeting notes')"); await pg.wait_for_timeout(800)
+    await pg.fill("input[aria-label='Search templates']", "hand-drawn"); await pg.click(".layout-opt:has-text('Meeting notes')"); await pg.wait_for_timeout(800)
     await pg.click("[aria-label='Toggle sidebar']"); await pg.click("[aria-label='Toggle note list']"); await pg.wait_for_timeout(300)
     E=await els(pg); ok("layout creates page", len(E)>30, f"{len(E)} items")
     await pg.click("[aria-label^='Select']")
@@ -86,9 +86,11 @@ async def main():
     await pg.screenshot(path=f"{D}/02-after-edits.png")
     # --- 13. every template in every category
     await pg.click("button:has-text('Templates')"); await pg.wait_for_timeout(300)
-    cats=await pg.locator(".stamp-cats .chip-btn").all_inner_texts()
-    total=0; bad=[]
-    for c in cats:
+    total=0; bad=[]; cats=[]
+    for shelf in ["Blocks", "Stickers"]:
+     await pg.click(f".tpl-shelves button:has-text('{shelf}')"); await pg.wait_for_timeout(150)
+     for c in [c for c in await pg.locator(".stamp-cats .chip-btn").all_inner_texts() if c != "All"]:
+      cats.append(c)
       await pg.click(f".stamp-cats .chip-btn:text-is('{c}')"); await pg.wait_for_timeout(150)
       await pg.screenshot(path=f"{D}/10-cat-{c.replace(' ','_').replace('&','and')}.png")
       names=await pg.locator(".stamp-grid .stamp span").all_inner_texts()
@@ -109,10 +111,10 @@ async def main():
     # --- 14. every layout opens
     await pg.click("[aria-label='Toggle note list']")
     names=None; lbad=[]
-    await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(300); await pg.click("[role=tab]:has-text('Hand-drawn')")
+    await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(300); await pg.fill("input[aria-label='Search templates']", "hand-drawn")
     names=await pg.locator(".layout-opt b").all_inner_texts(); await pg.keyboard.press("Escape"); await pg.mouse.click(5,940)
     for nm in names:
-      await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(250); await pg.click("[role=tab]:has-text('Hand-drawn')")
+      await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(250); await pg.fill("input[aria-label='Search templates']", "hand-drawn")
       await pg.locator(f".layout-opt:has(b:text-is('{nm}'))").click(); await pg.wait_for_timeout(500)
       title=await pg.input_value("input[aria-label='Note title']") if await pg.locator("input[aria-label='Note title']").count() else ""
       for _ in range(2): await pg.click("[aria-label='Zoom out']")

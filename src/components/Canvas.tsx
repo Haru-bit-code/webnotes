@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { El, ElType, Paper, Pt } from "@/lib/types";
 import { parsePlotShort, plotInner } from "@/lib/charts";
-import { CATEGORIES, STAMPS, placeStamp } from "@/lib/stamps";
+import { STAMPS, placeStamp } from "@/lib/stamps";
 import { useCustomTemplates } from "@/lib/customTemplates";
-import { KIT_ELEMENTS } from "@/lib/kits";
+import { KIT_ELEMENTS, KIT_PAGES, KitPage } from "@/lib/kits";
+import { PAGE_TEMPLATES } from "@/lib/pages";
+import { BLOCK_GROUPS, LAYOUT_GROUP, PAGE_GROUPS, blockGroup, kitGroup, matches } from "@/lib/catalog";
 import { loadSvg, svgToEls } from "@/lib/svgImport";
 import { useAssetUrl } from "@/lib/assets";
 import { imageEl, pdfPages } from "@/lib/importers";
@@ -13,6 +15,7 @@ import { PaperLayer, PaperPicker } from "./Paper";
 import { Icon } from "./Icon";
 import rough from "roughjs";
 import { saveFile } from "@/lib/save";
+import { Cell, Segs, blankOf, cellAt, cellsOf, inCell, isLabel, isTickBox, isWritten, sameCell, segsOf } from "@/lib/areas";
 
 type Tool = "select" | "hand" | "pen" | "hl" | "eraser" | "line" | "arrow" | "rect" | "ellipse" | "diamond" | "triangle" | "cube" | "text" | "axes" | "plot";
 const TOOLS: [Tool, string, string][] = [
@@ -357,7 +360,9 @@ const PAPER_RULES: Partial<Record<Paper, { h: number; off: number; margin?: numb
 export function Canvas({ initial, onChange, title, paper = "dots", onPaper, overlay }: { initial: El[]; onChange: (els: El[]) => void; title: string; paper?: Paper; onPaper?: (p: Paper) => void; overlay?: { active: boolean; slot: HTMLElement | null } }) {
   const ov = !!overlay, ovOff = !!overlay && !overlay.active;
   const [panel, setPanel] = useState<null | "templates" | "paper" | "more" | "save">(null);
-  const [cat, setCat] = useState<string>("Sketch");
+  const [sec, setSec] = useState<"blocks" | "pages" | "stickers" | "mine">("blocks"); // Templates panel: which shelf
+  const [grp, setGrp] = useState("All");                                               // …and which group on it
+  const [tq, setTq] = useState("");                                                    // …and what is searched for
   const custom = useCustomTemplates();
   const [sketch, setSketch] = useState(() => { try { return localStorage.getItem("webnotes:sketch") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("webnotes:sketch", sketch ? "1" : "0"); } catch { /* ignore */ } }, [sketch]);
@@ -381,7 +386,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
   const [snapPrev, setSnapPrev] = useState<Snap | null>(null);
   const stab = useRef<Pt>([0, 0]);
   // text being typed: x/y is the left end of the first line's baseline, in world units
-  const [textBox, setTextBox] = useState<{ id?: string; x: number; y: number; value: string; fs: number; font?: El["font"]; bold?: boolean; c: string; g?: string; rot?: number; rc?: Pt; lh?: number; maxW?: number } | null>(null);
+  const [textBox, setTextBox] = useState<{ id?: string; x: number; y: number; value: string; fs: number; font?: El["font"]; bold?: boolean; c: string; g?: string; rot?: number; rc?: Pt; lh?: number; maxW?: number;
+    wr?: boolean; keep?: string; cell?: Cell; scope?: string; selAll?: boolean } | null>(null); // wr: written into a template; keep: label kept in front of a blank; cell/scope: the template area being filled
   const tbRef = useRef(textBox); tbRef.current = textBox; // the open text box, cleared the moment it is saved (so a click + blur can't save it twice)
   // writing lines of the page: long horizontal lines of a template (and vertical ones, for margins)
   const rules = useMemo(() => {
@@ -396,6 +402,28 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
     const x = Math.min(...b.map((q) => q.x)), y = Math.min(...b.map((q) => q.y));
     return { x, y, w: Math.max(...b.map((q) => q.x + q.w)) - x, h: Math.max(...b.map((q) => q.y + q.h)) - y };
   }, [els]);
+  // templates on this page: the locked page background, and each dropped-in group, with their straight edges
+  type Scope = { key: string; g?: string; els: El[]; box: Cell; segs: Segs; fs: number };
+  const scopes = useMemo(() => {
+    const by = new Map<string, El[]>();
+    for (const e of els) {
+      if (isWritten(e)) continue;
+      const k = e.lock || e.tl ? "page" : e.g; if (!k) continue;
+      if (!by.has(k)) by.set(k, []); by.get(k)!.push(e);
+    }
+    return [...by.entries()].map(([key, list]): Scope => {
+      const bs = list.map(bbox), fss = list.filter((x) => x.t === "text" && !x.bold).map((x) => x.fs ?? 16).sort((a, b) => a - b);
+      return { key, g: key === "page" ? undefined : key, els: list, segs: segsOf(list), fs: fss.length ? fss[fss.length >> 1] : 16,
+        box: { x: Math.min(...bs.map((q) => q.x)), y: Math.min(...bs.map((q) => q.y)), x2: Math.max(...bs.map((q) => q.x + q.w)), y2: Math.max(...bs.map((q) => q.y + q.h)) } };
+    }).filter((sc) => sc.segs.hs.length || sc.segs.vs.length);
+  }, [els]);
+  const scopesRef = useRef(scopes); scopesRef.current = scopes;
+  // the template under a point (the smallest one, if they overlap) and the writing area there
+  const areaAt = (p: Pt): { scope: Scope; cell: Cell | null } | null => {
+    const hit = scopesRef.current.filter((sc) => inCell(sc.box, p, 4)).sort((a, b) => (a.box.x2 - a.box.x) * (a.box.y2 - a.box.y) - (b.box.x2 - b.box.x) * (b.box.y2 - b.box.y));
+    for (const sc of hit) { const cell = cellAt(p, sc.segs); if (cell) return { scope: sc, cell }; }
+    return hit.length ? { scope: hit[0], cell: null } : null;
+  };
   const lastPt = useRef<Pt | null>(null);       // where the page was last clicked: typing starts here
   const active = useRef(false);                 // keyboard goes to the page only after it was clicked
   const rootRef = useRef<HTMLDivElement>(null);
@@ -404,7 +432,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
   const future = useRef<El[][]>([]);
   const elsRef = useRef(els); elsRef.current = els;
   const drawRef = useRef<El | null>(null);
-  const drag = useRef<null | { mode: "draw" | "pan" | "move" | "erase" | "marquee" | "scale"; sx: number; sy: number; last: Pt; snap?: El[]; moved?: boolean; editOnUp?: string; tap?: Pt; box?: { x: number; y: number; w: number; h: number }; ids?: string[] }>(null);
+  const drag = useRef<null | { mode: "draw" | "pan" | "move" | "erase" | "marquee" | "scale"; sx: number; sy: number; last: Pt; snap?: El[]; moved?: boolean; editOnUp?: string; writeOnUp?: { p: Pt; id: string }; tap?: Pt; box?: { x: number; y: number; w: number; h: number }; ids?: string[] }>(null);
   const widthSnap = useRef<El[] | null>(null);
   const space = useRef(false);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -492,7 +520,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
         e.preventDefault();
         const t = ids.length ? firstText(ids) : null;
         if (t && ids.every((id) => cur.find((x) => x.id === id)?.t === "text")) editText(t, e.key);
-        else startText(lastPt.current ?? centre(), e.key);
+        else tapWrite(lastPt.current ?? centre(), null, e.key);
       }
     };
     const up = (e: KeyboardEvent) => { if (e.code === "Space") space.current = false; };
@@ -572,14 +600,15 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
       const already = selRef.current.includes(id);
       if (!already) setSel(id);
       const hitEl = elsRef.current.find((x) => x.id === id);
-      // clicking a text that is already selected (e.g. inside a template) opens it for typing
-      drag.current = { mode: "move", sx: 0, sy: 0, last: p, snap: elsRef.current, editOnUp: already && hitEl?.t === "text" ? id : undefined };
+      // Select tool: the first tap picks a template up (to move or resize it), a second tap writes in it
+      const tpl = !!hitEl?.g && already;
+      drag.current = { mode: "move", sx: 0, sy: 0, last: p, snap: elsRef.current, editOnUp: already && hitEl?.t === "text" ? id : undefined, writeOnUp: tpl ? { p, id: id! } : undefined };
       return;
     }
     if (tool === "eraser") { drag.current = { mode: "erase", sx: 0, sy: 0, last: p, snap: elsRef.current }; erase(e.clientX, e.clientY); return; }
     if (tool === "text") { // after mousedown's focus change, or the box blurs at once
       const id = idAt(e.clientX, e.clientY), hitEl = elsRef.current.find((x) => x.id === id);
-      setTimeout(() => (hitEl?.t === "text" ? editText(hitEl) : startText(p, "", hitEl)), 0); return;
+      setTimeout(() => tapWrite(p, hitEl), 0); return;
     }
     const t = tool as ElType;
     const isFree = t === "pen" || t === "hl";
@@ -666,7 +695,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
       const m = marq; setMarq(null);
       const end = d.last, tp = d.tap;
       // a tap (no drag) on a page: write there
-      if (tp && (!m || Math.hypot(m.x2 - m.x, m.y2 - m.y) < 4) && Math.hypot(end[0] - tp[0], end[1] - tp[1]) < 6 / view.k) { startText(tp, ""); return; }
+      if (tp && (!m || Math.hypot(m.x2 - m.x, m.y2 - m.y) < 4) && Math.hypot(end[0] - tp[0], end[1] - tp[1]) < 6 / view.k) { tapWrite(tp); return; }
       if (!m) return;
       const x0 = Math.min(m.x, m.x2), x1 = Math.max(m.x, m.x2), y0 = Math.min(m.y, m.y2), y1 = Math.max(m.y, m.y2);
       if (x1 - x0 < 4 && y1 - y0 < 4) return;
@@ -677,6 +706,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
     if (d.mode === "erase" || d.mode === "move" || d.mode === "scale") {
       if (d.mode === "erase" ? elsRef.current.length !== d.snap!.length : d.moved) { past.current.push(d.snap!); future.current = []; onChange(elsRef.current); }
       else if (d.mode === "move" && d.editOnUp) { const t = elsRef.current.find((x) => x.id === d.editOnUp); if (t) setTimeout(() => editText(t), 0); }
+      else if (d.mode === "move" && d.writeOnUp) { const w = d.writeOnUp, t = elsRef.current.find((x) => x.id === w.id); setSelIds([]); setTimeout(() => tapWrite(w.p, t?.t === "text" ? t : null), 0); }
       return;
     }
     if (d.mode !== "draw" || !draft) return;
@@ -686,8 +716,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
       if (holdTimer.current) clearTimeout(holdTimer.current);
       // a click (not a stroke) with the pen: type there instead of leaving a dot (lands on the line on ruled templates). A stylus still makes dots.
       const xs = el.pts.map((q) => q[0]), ys = el.pts.map((q) => q[1]);
-      if (el.t === "pen" && e?.pointerType !== "pen" && Math.max(...xs) - Math.min(...xs) < 4 / view.k && Math.max(...ys) - Math.min(...ys) < 4 / view.k && !ov) {
-        setSnapPrev(null); const at = el.pts[0], hit = elsRef.current.find((x) => x.id === idAt(e!.clientX, e!.clientY)); if (hit?.t === "text") editText(hit); else startText(at, "", hit); return;
+      if (el.t === "pen" && e?.pointerType !== "pen" && Math.max(...xs) - Math.min(...xs) < 4 / view.k && Math.max(...ys) - Math.min(...ys) < 4 / view.k && (!ov || areaAt(el.pts[0]))) {
+        setSnapPrev(null); const at = el.pts[0], hit = elsRef.current.find((x) => x.id === idAt(e!.clientX, e!.clientY)); tapWrite(at, hit); return;
       }
       if (el.t === "pen" && (snapPrev || Date.now() - lastMove.current > 450)) { // held still before lifting → snap to clean shape
         const r = snapPrev ?? recogniseAll(el.pts, elsRef.current, el);
@@ -716,7 +746,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
     const id = idAt(e.clientX, e.clientY); const el = els.find((x) => x.id === id);
     if (tool !== "select" && tool !== "text") return;
     // double-click empty space or inside a box/cell to type there; on text to edit it
-    if (!el || (el.t !== "text" && el.t !== "plot")) { const p = toWorld(e.clientX, e.clientY); setTimeout(() => startText(p, "", el), 0); return; }
+    if (!el || (el.t !== "text" && el.t !== "plot")) { const p = toWorld(e.clientX, e.clientY); setTimeout(() => tapWrite(p, el), 0); return; }
     if (el.t === "text") { editText(el); return; }
     if (el.t === "plot") {
       const ex = window.prompt("Edit function(s):", el.expr);
@@ -736,7 +766,12 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
   const editText = (el: El, append = "") => {
     setSelIds([el.id]);
     const r = el.lh ? ruleFor([el.x + 1, el.y]) : null;
-    setTextBox({ id: el.id, x: el.x, y: el.y, value: (isPlaceholder(el.text) ? "" : el.text || "") + append, fs: el.fs || 20, font: el.font, bold: el.bold, c: el.c, rot: el.rot, rc: el.rc, lh: el.lh, maxW: r ? Math.max(40, r.x2 - el.x - 6) : undefined });
+    // a blank in a template ("…", "Write here…", "Date: ____"): typing fills it in
+    const keep = el.wr ? null : isLabel(el) ? blankOf(el.text) : isPlaceholder(el.text) ? "" : null;
+    const a = areaAt([el.x + 2, el.y - (el.fs || 20) * 0.4]), cell = el.wr && a?.cell && !isTickBox(a.cell) ? a.cell : undefined;
+    setTextBox({ id: el.id, x: el.x, y: el.y, value: (keep ?? el.text ?? "") + append, fs: el.fs || 20, font: el.font, bold: el.bold, c: el.c, rot: el.rot, rc: el.rc, lh: el.lh,
+      maxW: r ? Math.max(40, r.x2 - el.x - 6) : cell ? Math.max(40, cell.x2 - el.x - 6) : undefined, keep: keep ?? undefined, wr: !!el.wr, cell, scope: cell ? a!.scope.key : undefined,
+      selAll: !append && keep === null && isLabel(el) && !!a?.cell && !isTickBox(a.cell) }); // a template's heading in a cell: typing replaces it
   };
   // the rule line a point would be written on: template lines first, then ruled paper
   const ruleFor = (p: Pt): { y: number; x1: number; x2: number; gap: number; margin?: number } | null => {
@@ -755,28 +790,89 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
     const y = Math.ceil((p[1] - 6 - pr.off) / pr.h) * pr.h + pr.off;
     return { y, x1: -1e5, x2: 1e5, gap: pr.h, margin: pr.margin };
   };
-  // where typed text sits: on the line below the click, sized to the line spacing
-  const writeAt = (p: Pt) => {
-    const r = ruleFor(p); if (!r) return null;
+  // where typed text sits: on the line below the click, sized to the line spacing (kept inside a cell, if given)
+  const writeAt = (p: Pt, clip?: Cell | null) => {
+    const r0 = ruleFor(p); if (!r0) return null;
+    const r = clip ? { ...r0, x1: Math.max(r0.x1, clip.x), x2: Math.min(r0.x2, clip.x2) } : r0;
     let x = Math.max(p[0], r.x1 + 6);
-    if (r.margin !== undefined && p[0] < r.margin + 6) x = r.margin + 10;
+    if (r.margin !== undefined && r.margin > r.x1 && p[0] < r.margin + 6) x = r.margin + 10;
     const fs = Math.round(Math.min(32, Math.max(12, r.gap * 0.5)));
     return { x, y: r.y - Math.max(3, r.gap * 0.17), fs, lh: r.gap, maxW: Math.max(40, r.x2 - x - 6) };
   };
-  // a tap here should start writing: on a rule line, or anywhere on a template page
-  const writable = (p: Pt) => !!ruleFor(p) || (!!pageBox && p[0] >= pageBox.x && p[0] <= pageBox.x + pageBox.w && p[1] >= pageBox.y && p[1] <= pageBox.y + pageBox.h);
-  // new text at a point; inside a template it joins the template and copies its lettering
-  const startText = (p: Pt, init = "", inside?: El | null) => {
-    let st: { fs: number; font?: El["font"]; c: string; bold?: boolean } = newTextStyle(); let extra: Partial<El> = {};
+  // a tap here should start writing: on a rule line, in a template, or anywhere on a template page
+  const writable = (p: Pt) => !!ruleFor(p) || !!areaAt(p) || (!!pageBox && p[0] >= pageBox.x && p[0] <= pageBox.x + pageBox.w && p[1] >= pageBox.y && p[1] <= pageBox.y + pageBox.h);
+  // new free text at a point; inside a template it joins the template and copies its lettering
+  const startText = (p: Pt, init = "", inside?: El | null, scope?: Scope) => {
+    let st: { fs: number; font?: El["font"]; c: string; bold?: boolean } = newTextStyle(); let extra: Partial<NonNullable<typeof textBox>> = {};
     const w = inside ? null : writeAt(p);
-    if (w) { setTextBox({ x: w.x, y: w.y, value: init, ...st, fs: w.fs, lh: w.lh, maxW: w.maxW }); return; }
-    if (inside?.g) {
-      const sib = elsRef.current.filter((x) => x.g === inside.g && x.t === "text" && !x.bold && (x.fs ?? 16) <= 20)[0];
-      if (sib) st = { fs: sib.fs ?? 16, font: sib.font, c: sib.c };
-      else if (inside.sk) st = { ...st, fs: 16, font: "hand" };
-      extra = { g: inside.g, rot: inside.rot, rc: inside.rc };
+    if (w) { setTextBox({ x: w.x, y: w.y, value: init, ...st, fs: w.fs, lh: w.lh, maxW: w.maxW, wr: !!scope, g: scope?.g }); return; }
+    const g = inside?.g ?? scope?.g;
+    if (g) {
+      const sib = elsRef.current.filter((x) => x.g === g && x.t === "text" && !x.bold && !x.wr && (x.fs ?? 16) <= 20)[0];
+      if (sib) st = { fs: sib.fs ?? 16, font: sib.font, c: st.c === "auto" ? sib.c : st.c };
+      else if (inside?.sk) st = { ...st, fs: 16, font: "hand" };
+      extra = { g, rot: inside?.rot, rc: inside?.rc };
+    } else if (scope) st = { ...st, fs: Math.round(Math.max(14, scope.fs)) };
+    setTextBox({ x: p[0], y: p[1] + st.fs * 0.35, value: init, ...st, ...extra, wr: !!scope } as NonNullable<typeof textBox>);
+  };
+  // write in one area of a template: edit what is already there, or start fresh text sized to fit it
+  const writeInCell = (cell: Cell, scope: Scope, p?: Pt, init = "") => {
+    const w = cell.x2 - cell.x, h = cell.y2 - cell.y, cur = elsRef.current;
+    const anchor = (x: El): Pt => [x.x + 2, x.y - (x.fs ?? 16) * 0.4];
+    const mine = cur.filter((x) => isWritten(x) && inCell(cell, anchor(x)) && sameCell(cellAt(anchor(x), scope.segs) ?? cell, cell));
+    const labels = scope.els.filter((x) => x.t === "text" && inCell(cell, anchor(x)));
+    const big = h > 160 && !!p;
+    if (big) {
+      const near = mine.find((x) => { const b = bbox(x); return p![0] >= b.x - 10 && p![0] <= b.x + Math.max(b.w, 60) + 10 && p![1] >= b.y - 10 && p![1] <= b.y + b.h + 10; });
+      if (near) { editText(near, init); return; }
+    } else {
+      if (mine.length) { editText(mine.sort((a, b) => a.y - b.y)[0], init); return; }
+      if (labels.length === 1 && h <= 64 && (blankOf(labels[0].text) !== null || w < 260)) { editText(labels[0], init); return; } // a header or blank that fills the cell
     }
-    setTextBox({ x: p[0], y: p[1] + st.fs * 0.35, value: init, ...st, ...extra } as NonNullable<typeof textBox>);
+    const sib = labels.find((x) => !x.bold && (x.fs ?? 16) <= 24) ?? scope.els.find((x) => x.t === "text" && !x.bold && (x.fs ?? 16) <= 24);
+    const fs = Math.round(Math.max(11, Math.min(h * 0.42, w * 0.2, scope.fs * 1.15, 40)));
+    const pad = Math.max(4, Math.min(12, h * 0.15, fs * 0.6));
+    const top = Math.max(cell.y, ...labels.filter((x) => x.y < cell.y + h * 0.5).map((x) => x.y + (x.fs ?? 16) * 0.3));
+    const x = big && p![0] > cell.x + w * 0.5 ? p![0] : cell.x + pad;
+    let y = h < fs * 2.6 ? cell.y + h / 2 + fs * 0.36 : top + pad + fs * 0.9;
+    if (big) y = Math.max(y, p![1] + fs * 0.35);
+    const c = color === "auto" && sib && sib.c !== "auto" && !scope.g ? sib.c : color;
+    const room = cell.x2 - pad - x; // wrap inside the cell, unless it's too narrow to hold a few words
+    setTextBox({ x, y, value: init, fs, lh: Math.round(fs * 1.3), maxW: room >= fs * 6 ? room : undefined, font: sib?.font, c, g: scope.g, wr: true, cell, scope: scope.key });
+  };
+  // a small square: tap to tick it, tap again to clear it
+  const toggleTick = (cell: Cell, scope: Scope) => {
+    const cur = elsRef.current, h = cell.y2 - cell.y;
+    const on = cur.find((x) => isWritten(x) && x.text === "✓" && inCell(cell, [x.x + h * 0.3, x.y - h * 0.3], 3));
+    if (on) { commit(cur.filter((x) => x.id !== on.id)); return; }
+    commit([...cur, { id: uid(), t: "text", x: cell.x + h * 0.12, y: cell.y2 - h * 0.14, text: "✓", fs: Math.round(h * 0.95), bold: true, w: 1, c: color === "auto" ? "#16a34a" : color, g: scope.g, wr: 1 }]);
+  };
+  // Tab / Shift+Tab: save, then move to the next / previous area of the same template
+  const nextArea = (from: Cell, key: string, dir: 1 | -1) => {
+    commitText(); // in the same step as opening the next one, so fast typing can't land in the old box
+    const sc = scopesRef.current.find((x) => x.key === key); if (!sc) return;
+    const list = cellsOf(sc.segs); if (!list.length) return;
+    let i = list.findIndex((c) => sameCell(c, from));
+    if (i < 0) i = dir > 0 ? list.findIndex((c) => c.y > from.y || (c.y === from.y && c.x > from.x)) - 1 : list.findIndex((c) => c.y > from.y || (c.y === from.y && c.x >= from.x));
+    writeInCell(list[(i + dir + list.length) % list.length], sc);
+  };
+  // a tap (or click, or a key pressed) on the page: write right there — in the template cell, on the line, or as free text
+  const tapWrite = (p: Pt, hit?: El | null, init = "") => {
+    const a = areaAt(p), cell = a?.cell ?? null;
+    if (hit?.t === "text" && !(hit.wr && hit.text === "✓" && cell && isTickBox(cell))) { editText(hit, init); return; }
+    // a tick box is a small square drawn as a box (not a square of graph paper)
+    const boxAt = (c: Cell) => a!.scope.els.some((e) => e.t === "rect" && Math.abs(Math.min(e.x, e.x2!) - c.x) < 2 && Math.abs(Math.min(e.y, e.y2!) - c.y) < 2 && Math.abs(Math.max(e.x, e.x2!) - c.x2) < 2);
+    if (cell && a && isTickBox(cell) && !init && boxAt(cell)) { toggleTick(cell, a.scope); return; }
+    const r = ruleFor(p);
+    // a writing line, unless the template's columns cut it into cells (a table); a margin line or graph paper doesn't count
+    let onLine = !!r && (!cell || r.x1 < -1e4);
+    if (r && cell && a) {
+      const cuts = a.scope.segs.vs.filter((v) => v.x > r.x1 + 90 && v.x < r.x2 - 4 && v.y1 <= r.y - 2 && v.y2 >= r.y - r.gap + 2).length;
+      onLine = cuts === 0 || cuts > 9;
+    }
+    if (r && onLine) { const w = writeAt(p); if (w) { setTextBox({ x: w.x, y: w.y, value: init, ...newTextStyle(), fs: w.fs, lh: w.lh, maxW: w.maxW, wr: !!a, g: a?.scope.g }); return; } }
+    if (cell && a) { writeInCell(cell, a.scope, p, init); return; }
+    startText(p, init, hit, a?.scope);
   };
   const pasteEls = (src: El[]) => {
     const gm = new Map<string, string>();
@@ -792,10 +888,11 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
     const cur = elsRef.current;
     if (tb.id) {
       const old = cur.find((x) => x.id === tb.id);
-      if (old && (old.text === tb.value || (!tb.value.trim() && isPlaceholder(old.text)))) return; // leave a template's "…" in place if nothing was typed
+      // leave a template's blank ("…", "Date: ____") as it was if nothing was typed into it
+      if (old && (old.text === tb.value || (tb.keep !== undefined && tb.value.trim() === tb.keep.trim()))) return;
       commit(tb.value.trim() ? cur.map((x) => (x.id === tb.id ? { ...x, text: tb.value } : x)) : cur.filter((x) => x.id !== tb.id));
     } else if (tb.value.trim()) {
-      const el: El = { id: uid(), t: "text", x: tb.x, y: tb.y, c: tb.c, w: 1, text: tb.value, fs: tb.fs, font: tb.font, bold: tb.bold, g: tb.g, rot: tb.rot, rc: tb.rc, ...(tb.lh ? { lh: tb.lh } : {}) };
+      const el: El = { id: uid(), t: "text", x: tb.x, y: tb.y, c: tb.c, w: 1, text: tb.value, fs: tb.fs, font: tb.font, bold: tb.bold, g: tb.g, rot: tb.rot, rc: tb.rc, ...(tb.lh ? { lh: tb.lh } : {}), ...(tb.wr ? { wr: 1 as const } : {}) };
       commit([...cur, el]); setSelIds([el.id]);
     }
   };
@@ -891,21 +988,28 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
   const applyStyle = (on: boolean) => { setSketch(on); if (selEls.length) commit(els.map((x) => selIds.includes(x.id) ? (x.t === "text" ? { ...x, font: on ? x.font ?? "hand" : x.font === "hand" ? undefined : x.font } : ["rect", "ellipse", "diamond", "triangle", "poly", "line", "arrow"].includes(x.t) ? { ...x, sk: on ? x.sk || 1.1 : undefined } : x) : x)); };
 
   // templates: build each once for the thumbnails
-  const built = useMemo(() => STAMPS.map((st) => ({ ...st, els: st.build() })), []);
-  const cats = [...custom.cats, ...CATEGORIES, "Stickers", "Visuals"];
-  const kitCat = cat === "Stickers" || cat === "Visuals";
-  const insertKit = async (src: string, name: string) => {
+  const built = useMemo(() => STAMPS.map((st, i) => ({ ...st, i, els: st.build(), group: blockGroup(st.cat) }))
+    .sort((a, b) => BLOCK_GROUPS.indexOf(a.group) - BLOCK_GROUPS.indexOf(b.group)), []); // tables first, hand-drawn last
+  const layouts = useMemo(() => PAGE_TEMPLATES.map((t) => ({ ...t, els: t.build(), group: LAYOUT_GROUP[t.id] ?? "Notes & paper" })), []);
+  const insertKit = async (src: string, name: string, maxW = 420) => {
     try {
       let list = await loadSvg(src, { group: true });
       const bs = list.map(bbox), w = Math.max(...bs.map((q) => q.x + q.w)) - Math.min(...bs.map((q) => q.x));
-      if (w > 420 || w < 140) { const k = (w > 420 ? 420 : 160) / w, x0 = Math.min(...bs.map((q) => q.x)), y0 = Math.min(...bs.map((q) => q.y)); list = list.map((e) => scaleEl(e, x0, y0, k)); }
+      if (w > maxW || w < 140) { const k = (w > maxW ? maxW : 160) / w, x0 = Math.min(...bs.map((q) => q.x)), y0 = Math.min(...bs.map((q) => q.y)); list = list.map((e) => scaleEl(e, x0, y0, k)); }
       insertStamp(list);
     } catch { alert(`Couldn't add "${name}". Check your connection and try again.`); }
   };
-  const shown = [
-    ...custom.list.filter((t) => t.kind === "block" && t.cat === cat).map((t) => ({ key: t.id, name: t.name, els: t.els, mine: t.id })),
-    ...built.map((st, i) => ({ key: "b" + i, name: st.name, els: st.els, cat: st.cat, i })).filter((x) => x.cat === cat).map((x) => ({ key: x.key, name: x.name, els: x.els, mine: undefined as string | undefined, i: x.i })),
-  ];
+  const insertPage = (p: KitPage) => insertKit(p.src, p.title, 760); // a whole page template, dropped onto this page
+  // what the Templates panel shows: a search across every shelf, or one shelf and group
+  const myCats = [...new Set(custom.list.map((t) => (t.kind === "page" ? "My layouts" : t.cat)))];
+  const shelf = {
+    blocks: built.filter((st) => (tq ? matches(tq, st.name, st.group, st.cat) : sec === "blocks" && (grp === "All" || st.group === grp))),
+    layouts: layouts.filter((t) => (tq ? matches(tq, t.name, t.hint, t.group) : sec === "pages" && (grp === "All" || t.group === grp))),
+    pages: KIT_PAGES.filter((p) => (tq ? matches(tq, p.title, p.cat, kitGroup(p)) : sec === "pages" && (grp === "All" || kitGroup(p) === grp))),
+    stickers: KIT_ELEMENTS.filter((k) => (tq ? matches(tq, k.name, k.cat) : sec === "stickers" && (grp === "All" || k.cat === grp))),
+    mine: custom.list.filter((t) => (tq ? matches(tq, t.name, t.cat) : sec === "mine" && (grp === "All" || (t.kind === "page" ? "My layouts" : t.cat) === grp))),
+  };
+  const groupsOf = { blocks: BLOCK_GROUPS as string[], pages: PAGE_GROUPS as string[], stickers: ["Stickers", "Visuals"], mine: myCats };
   const insertStamp = (fresh: El[]) => {
     const r = svgRef.current!.getBoundingClientRect();
     const g = uid();
@@ -917,7 +1021,8 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
     let px = cx - w / 2, py = cy - h / 2;
     for (let i = 0; i < 200 && hit(px, py); i++) py += 24;
     const placed = placeStamp(at0, px, py);
-    commit([...els, ...placed]); setSelIds(placed.map((x) => x.id)); setTool("select");
+    commit([...els, ...placed]); setSelIds([]); // ready to write in: tap any cell, line or box
+    if (tool !== "pen" && tool !== "text" && tool !== "select") setTool("pen");
     if (ov) { const sc = scroller(); if (sc && py !== cy - h / 2) sc.scrollTop += r.top + py - sc.getBoundingClientRect().top - 80; }
     else if (py !== cy - h / 2) setView((v) => ({ ...v, y: r.height / 2 - (py + h / 2) * v.k })); // bring it into view
     if (window.innerWidth < 768) setPanel(null);
@@ -947,18 +1052,22 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
         const left = textBox.x * view.k + view.x, top = (textBox.y - (lh ? (lh - textBox.fs * 1.2) / 2 + textBox.fs * 0.95 : textBox.fs * 0.95)) * view.k + view.y;
         const col = textBox.c === "auto" ? "var(--text)" : textBox.c === "accent" ? "var(--accent)" : textBox.c;
         return (
-          <textarea autoFocus className="text-edit" aria-label="Text" spellCheck
+          <textarea key={`${textBox.id ?? ""}@${textBox.x},${textBox.y}`} autoFocus className={`text-edit${textBox.wr ? " in-template" : ""}`} aria-label="Text" spellCheck
             style={{ left, top, fontSize: textBox.fs * view.k, fontFamily: fam, fontWeight: textBox.bold ? 700 : 400, color: col, width: textBox.maxW ? textBox.maxW * view.k : `calc(${longest + 2}ch)`, height: lh ? lines.length * lh * view.k : `${lines.length * 1.3 + 0.25}em`, lineHeight: lh ? `${lh * view.k}px` : undefined,
               transform: textBox.rot ? `rotate(${textBox.rot}deg)` : undefined, transformOrigin: "0 0" }}
             placeholder="Type here" value={textBox.value}
-            onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
+            onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(textBox.selAll ? 0 : n, n); }}
             onChange={(e) => {
               const t = e.target; let value = t.value;
               // on a ruled line, a line that reaches the end of the rule continues on the next one
               if (textBox.maxW && t.selectionStart === value.length) value = wrapText(value, textBox.maxW, `${textBox.bold ? 700 : 400} ${textBox.fs}px ${fam}`);
               setTextBox({ ...textBox, value });
             }} onBlur={commitText}
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); (e.target as HTMLElement).blur(); } }} />
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); (e.target as HTMLElement).blur(); return; }
+              if (e.key === "Tab" && textBox.cell && textBox.scope) { e.preventDefault(); nextArea(textBox.cell, textBox.scope, e.shiftKey ? -1 : 1); }
+            }} />
         );
       })()}
 
@@ -1040,30 +1149,63 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
       {panel === "templates" && (
         <aside className="stamp-panel" aria-label="Templates">
           <div className="pop-head"><b>Templates</b><button className="btn icon-btn ghost" aria-label="Close templates" onClick={() => setPanel(null)}><Icon name="close" /></button></div>
-          <div className="stamp-cats">
-            {cats.map((c) => <button key={c} className={`chip-btn ${cat === c ? "on" : ""} ${custom.cats.includes(c) ? "mine" : ""}`} onClick={() => setCat(c)}>{c}</button>)}
-          </div>
-          {kitCat ? <div className="stamp-grid kit-grid">
-            {KIT_ELEMENTS.filter((k) => k.cat === cat).map((k) => (
-              <button key={k.src} className="stamp" onClick={() => insertKit(k.src, k.name)} title={`Insert ${k.name}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={k.src} alt="" loading="lazy" /><span>{k.name}</span>
-              </button>
-            ))}
-          </div> : <div className="stamp-grid">
-            {shown.map((st) => (
-              <div key={st.key} className="stamp-wrap">
-                <button className="stamp" onClick={() => insertStamp(st.mine ? st.els : STAMPS[(st as { i: number }).i].build())} title={`Insert ${st.name}`}>
-                  <StampThumb els={st.els} />
-                  <span>{st.name}</span>
+          <label className="search tpl-search"><Icon name="search" /><input placeholder="Search: table, planner, checklist…" value={tq} onChange={(e) => setTq(e.target.value)} aria-label="Search blocks and pages" /></label>
+          {!tq && <>
+            <div className="seg tpl-shelves" role="tablist" aria-label="Kind of template">
+              {([["blocks", "Blocks"], ["pages", "Pages"], ["stickers", "Stickers"], ...(custom.list.length ? [["mine", "Mine"]] : [])] as [typeof sec, string][]).map(([k, label]) => (
+                <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? "on" : ""} onClick={() => { setSec(k); setGrp(k === "stickers" ? "Stickers" : "All"); }}>{label}</button>
+              ))}
+            </div>
+            <div className="stamp-cats">
+              {[...(sec === "stickers" ? [] : ["All"]), ...groupsOf[sec]].map((c) => <button key={c} className={`chip-btn ${grp === c ? "on" : ""}`} onClick={() => setGrp(c)}>{c}</button>)}
+            </div>
+          </>}
+          <div className="tpl-scroll">
+            {tq && shelf.blocks.length > 0 && <h4 className="tpl-h">Blocks</h4>}
+            {shelf.blocks.length > 0 && <div className="stamp-grid">
+              {shelf.blocks.map((st) => (
+                <button key={"b" + st.i} className="stamp" onClick={() => insertStamp(STAMPS[st.i].build())} title={`Insert ${st.name}`}>
+                  <StampThumb els={st.els} /><span>{st.name}</span>
                 </button>
-                {st.mine && <button className="stamp-del" aria-label={`Delete template ${st.name}`} title="Delete this template" onClick={() => confirm(`Delete the template "${st.name}"?`) && custom.remove(st.mine!)}><Icon name="close" /></button>}
-              </div>
-            ))}
-            {shown.length === 0 && <p className="muted col-span-2 text-sm">No templates here yet.</p>}
-          </div>}
+              ))}
+            </div>}
+            {tq && shelf.layouts.length + shelf.pages.length > 0 && <h4 className="tpl-h">Pages</h4>}
+            {shelf.layouts.length + shelf.pages.length > 0 && <div className="stamp-grid">
+              {shelf.layouts.map((t) => (
+                <button key={t.id} className="stamp" onClick={() => insertStamp(t.build())} title={`${t.name}: ${t.hint}`}>
+                  <StampThumb els={t.els} /><span>{t.name}</span>
+                </button>
+              ))}
+              {shelf.pages.map((p) => (
+                <button key={p.id} className="stamp page-stamp" onClick={() => insertPage(p)} title={`Insert ${p.title}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.src} alt="" loading="lazy" /><span>{p.title}</span>
+                </button>
+              ))}
+            </div>}
+            {tq && shelf.stickers.length > 0 && <h4 className="tpl-h">Stickers</h4>}
+            {shelf.stickers.length > 0 && <div className="stamp-grid kit-grid">
+              {shelf.stickers.map((k) => (
+                <button key={k.src} className="stamp" onClick={() => insertKit(k.src, k.name)} title={`Insert ${k.name}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={k.src} alt="" loading="lazy" /><span>{k.name}</span>
+                </button>
+              ))}
+            </div>}
+            {tq && shelf.mine.length > 0 && <h4 className="tpl-h">Mine</h4>}
+            {shelf.mine.length > 0 && <div className="stamp-grid">
+              {shelf.mine.map((t) => (
+                <div key={t.id} className="stamp-wrap">
+                  <button className="stamp" onClick={() => insertStamp(t.els)} title={`Insert ${t.name}`}><StampThumb els={t.els} /><span>{t.name}</span></button>
+                  <button className="stamp-del" aria-label={`Delete template ${t.name}`} title="Delete this template" onClick={() => confirm(`Delete the template "${t.name}"?`) && custom.remove(t.id)}><Icon name="close" /></button>
+                </div>
+              ))}
+            </div>}
+            {shelf.blocks.length + shelf.layouts.length + shelf.pages.length + shelf.stickers.length + shelf.mine.length === 0 &&
+              <p className="muted text-sm">{tq ? `Nothing matches “${tq}”.` : "No templates here yet."}</p>}
+          </div>
           <div className="stamp-foot">
-            <span className="flex-1">Tap to drop it on the page. Double-click any text to change it, or inside a box or cell to type there. Drag the corner handle to resize.</span>
+            <span className="flex-1">Tap one to add it, then tap any cell, line or box to write in it. Tab moves to the next.</span>
           </div>
           <div className="flex gap-2 pt-2">
             <button className="btn flex-1" onClick={() => setPanel("save")}><Icon name="plus" /> New template</button>
@@ -1081,7 +1223,7 @@ export function Canvas({ initial, onChange, title, paper = "dots", onPaper, over
             if (!src.length) { alert("This page is empty. Draw something or add a template first."); return; }
             const norm = placeStamp(src.map((x) => ({ ...x, g: undefined })), 0, 0);
             custom.add({ name, cat: category, kind: whole ? "page" : "block", paper: whole ? paper : undefined, els: norm });
-            setPanel("templates"); if (!whole) setCat(category);
+            setPanel("templates"); setSec("mine"); setGrp(whole ? "My layouts" : category); setTq("");
           }} />
       )}
           {ov && busyMsg && <div className="busy-toast" role="status">{busyMsg}</div>}

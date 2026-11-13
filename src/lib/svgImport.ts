@@ -68,7 +68,7 @@ export function svgToEls(svgText: string, opts: Opts = {}): El[] {
           const weight = el.getAttribute("font-weight") ?? "";
           let x = num(el.getAttribute("x")) * k; const anchor = el.getAttribute("text-anchor");
           if (anchor === "middle" || anchor === "end") { const w = text.length * fs * 0.56; x -= anchor === "middle" ? w / 2 : w; }
-          out.push({ ...base(el), lock: undefined, t: "text", x, y: num(el.getAttribute("y")) * k, text, fs, c: fill ?? "#1f2937", w: 1,
+          out.push({ ...base(el), lock: undefined, ...(opts.lock ? { tl: 1 as const } : {}), t: "text", x, y: num(el.getAttribute("y")) * k, text, fs, c: fill ?? "#1f2937", w: 1,
             bold: weight === "bold" || num(weight, 400) >= 600 || undefined,
             font: /mono|courier/.test(fam) ? "mono" : /comic|hand|cursive|marker/.test(fam) ? "hand" : undefined } as El);
           break;

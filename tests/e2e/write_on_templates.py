@@ -74,12 +74,12 @@ async def main():
     await pg.screenshot(path=f"{D}/03-paper.png")
     # hand-drawn layouts
     await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(300)
-    await pg.click("[role=tab]:has-text('Hand-drawn')"); await pg.wait_for_timeout(200)
+    await pg.fill("input[aria-label='Search templates']", "hand-drawn"); await pg.wait_for_timeout(200)
     names=await pg.locator(".modal .layout-opt b").all_inner_texts(); await pg.click(".modal [aria-label='Close']")
     bad=[]
     for nm in names[:12]:
       await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(300)
-      await pg.click("[role=tab]:has-text('Hand-drawn')"); await pg.wait_for_timeout(200)
+      await pg.fill("input[aria-label='Search templates']", "hand-drawn"); await pg.wait_for_timeout(200)
       await pg.locator(f".modal .layout-opt:has(b:text-is('{nm}'))").first.click(); await pg.wait_for_timeout(700)
       R=await rule_rects(pg); vis=[r for r in R if 250<r[1]<850 and r[2]>60]
       pairs=[(r1,r2) for r1,r2 in zip(vis,vis[1:]) if abs(r1[0]-r2[0])<3 and 15<r2[1]-r1[1]<90]
