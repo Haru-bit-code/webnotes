@@ -717,3 +717,8 @@ kbd { background: var(--chip); border-color: var(--glass-line); }
   .layout-grid, .lib-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .layout-opt small { display: none; }
 }
+
+/* writing in a template's lines or cells: no box at all, only the cursor on the page */
+.text-edit.field { background: transparent; outline: none; border-radius: 0; white-space: pre-wrap; overflow-wrap: break-word; caret-color: var(--accent); padding: 0; margin: 0; }
+.text-edit.in-template { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; overflow: visible; }
+.text-edit.field:focus, .text-edit.field:focus-visible { outline: none; box-shadow: none; border: none; }

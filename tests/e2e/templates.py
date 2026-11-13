@@ -41,7 +41,8 @@ async def main():
     ok("background is not selectable", await pg.locator("[data-handle]").count()==0)
     # type on the page
     await pg.keyboard.type("my note"); await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
-    ok("typing on template page", any("my note" in (x.get("text") or "") for x in await drawing(pg)), str([x.get("text") for x in await drawing(pg) if x["t"]=="text"][-6:]))
+    # this spot on the doodle page is a picture, not a writing area: no stray text box appears there
+    ok("no stray text box on a picture", not any("my note" in (x.get("text") or "") for x in await drawing(pg)) and await pg.locator(".text-edit").count()==0)
     await pg.screenshot(path=f"{D}/12-typed.png")
     # pen on page
     await pg.click("[aria-label^='Pen']"); await pg.mouse.move(600,620); await pg.mouse.down(); await pg.mouse.move(800,660,steps=8); await pg.mouse.up(); await pg.wait_for_timeout(200)

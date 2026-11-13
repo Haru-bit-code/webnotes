@@ -32,35 +32,37 @@ async def main():
     ok("clicking the next line saves and starts there", await pg.locator(".text-edit").count()==1)
     await pg.keyboard.type("A much longer sentence that keeps going and going so that it reaches the end of the ruled line and must continue on the line below without me pressing enter at all")
     await pg.keyboard.press("Escape"); await pg.wait_for_timeout(250)
-    E=await drawing(pg); T=[x for x in E if x["t"]=="text" and not x.get("lock") and x.get("lh")]
-    ok("both texts saved with line spacing", len(T)==2, str([x.get("text","")[:20] for x in T]))
-    # baseline sits just above a rule
+    E=await drawing(pg); T=[x for x in E if x["t"]=="text" and x.get("wr")]
+    ok("one piece of writing on the page, not a box per click", len(T)==1, str([x.get("text","")[:20] for x in T]))
+    t=T[0]; gap=t["lh"]; L=t["text"].split("\n")
     ys=sorted(set(round(x["y"]) for x in E if x.get("lock") and x["t"]=="line" and abs(x["y2"]-x["y"])<1.5))
-    t1=sorted(T,key=lambda x:x["y"])[0]
-    gap=t1["lh"]; nearest=min(ys,key=lambda y:abs(y-t1["y"]))
-    ok("text sits on the line", 0 < nearest-t1["y"] < gap*0.3, f"baseline {t1['y']:.0f} rule {nearest} gap {gap}")
-    ok("Enter goes to the next line", t1["text"]=="First line of my notes\nsecond line" and abs(gap-61)<2, repr(t1["text"]))
-    t2=sorted(T,key=lambda x:x["y"])[1]
-    lines=t2["text"].split("\n"); ok("long text wraps at the end of the rule", len(lines)>=2, str(len(lines)))
-    # rendered line ends stay inside the rule
-    right=await pg.evaluate("id=>document.querySelector(`[data-id='${id}'] text`).getBoundingClientRect().right", t2["id"])
+    off=[min(ys,key=lambda y:abs(y-(t["y"]+i*gap)))-(t["y"]+i*gap) for i in range(len(L))]
+    ok("every line of it sits on a rule", all(0 < o < gap*0.3 for o in off) and abs(gap-61)<2, f"gap {gap} offsets {[round(o) for o in off]}")
+    ok("Enter goes to the next line", "First line of my notes" in L and L[L.index("First line of my notes")+1]=="second line", repr(t["text"][:80]))
+    # where it landed on screen: the line under each click
+    tsp=await pg.evaluate("id=>[...document.querySelectorAll(`[data-id='${id}'] tspan`)].map(n=>[n.textContent,n.getBoundingClientRect().bottom])", t["id"])
+    fy=[y for (tx,y) in tsp if tx.startswith("First line")][0]; ly=[y for (tx,y) in tsp if tx.startswith("A much")][0]
+    ok("text goes on the line you clicked", abs(fy-vis[2][1]) < 30 and abs(ly-vis[5][1]) < 30, f"{fy:.0f}~{vis[2][1]:.0f}, {ly:.0f}~{vis[5][1]:.0f}")
+    ok("long text continues on the next lines", len([x for x in L if x])>=4, str(len(L)))
+    right=await pg.evaluate("id=>Math.max(...[...document.querySelectorAll(`[data-id='${id}'] tspan`)].map(n=>n.getBoundingClientRect().right))", t["id"])
     rr=max(r[0]+r[2] for r in vis)
     ok("wrapped text stays inside the page lines", right<=rr+4, f"{right:.0f} vs {rr:.0f}")
     await pg.screenshot(path=f"{D}/02-ruled.png")
-    # editing keeps the spacing
-    await pg.locator(f"[data-id='{t1['id']}']").dblclick(); await pg.wait_for_timeout(200); await pg.keyboard.press("End"); await pg.keyboard.type("!"); await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
-    t1b=[x for x in await drawing(pg) if x["id"]==t1["id"]][0]; ok("edited text keeps its line spacing", t1b.get("lh")==t1["lh"] and t1b["text"].endswith("!"))
+    # tapping your own words puts the cursor there: no new box
+    await pg.mouse.click(vis[2][0]+330, vis[2][1]-10); await pg.wait_for_timeout(200); await pg.keyboard.press("End"); await pg.keyboard.type("!"); await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
+    T2=[x for x in await drawing(pg) if x["t"]=="text" and x.get("wr")]
+    ok("tapping your writing edits it in place", len(T2)==1 and "First line of my notes!" in T2[0]["text"].split("\n") and T2[0].get("lh")==gap, repr(T2[0]["text"][:60]) if T2 else "")
     # other templates
     for q in ["Cornell Notes","Dot Grid","Graph Paper","Meeting Notes","Two Column","Daily Planner"]:
       await open_lib(pg,q); title=await pg.evaluate("JSON.parse(localStorage.getItem('webnotes:notes'))[0].title")
       R=await rule_rects(pg); vis=[r for r in R if 200<r[1]<850 and r[2]>60]
-      if vis: tx,ty=vis[min(2,len(vis)-1)][0]+40, vis[min(2,len(vis)-1)][1]-6
+      if len(vis)>=3: tx,ty=vis[2][0]+40, vis[2][1]-6
       else:
         bb=await pg.locator("svg.touch-none").first.bounding_box(); tx,ty=bb["x"]+bb["width"]/2, bb["y"]+bb["height"]*0.6
       await pg.mouse.click(tx,ty); await pg.wait_for_timeout(250)
       opened=await pg.locator(".text-edit").count()==1
       await pg.keyboard.type("Hello"); await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
-      got=[x for x in await drawing(pg) if x["t"]=="text" and x.get("text")=="Hello"]
+      got=[x for x in await drawing(pg) if x["t"]=="text" and "Hello" in (x.get("text") or "").split("\n")]
       ok(f"{title}: click and type", opened and len(got)==1, f"{len(vis)} rules, lh={got[0].get('lh') if got else None}")
       await pg.screenshot(path=f"{D}/t-{q.replace(' ','_')}.png")
     # built-in ruled paper (no template)
@@ -88,7 +90,7 @@ async def main():
       else: bb=await pg.locator("svg.touch-none").first.bounding_box(); tx,ty=bb["x"]+bb["width"]*0.45, bb["y"]+bb["height"]*0.55
       await pg.mouse.click(tx,ty); await pg.wait_for_timeout(250); o=await pg.locator(".text-edit").count()
       await pg.keyboard.type("Hi"); await pg.keyboard.press("Escape"); await pg.wait_for_timeout(150)
-      if not (o and any(x.get("text")=="Hi" for x in await drawing(pg))): bad.append((nm, o, round(tx), round(ty), [x.get("text") for x in await drawing(pg) if "Hi" in (x.get("text") or "")]))
+      if not (o and any("Hi" in (x.get("text") or "").split("\n") for x in await drawing(pg))): bad.append((nm, o, round(tx), round(ty), [x.get("text") for x in await drawing(pg) if "Hi" in (x.get("text") or "")]))
     ok(f"hand-drawn layouts ({min(12,len(names))}): click and type", not bad, str(bad))
     ok("no errors", not errs, ";".join(errs[:3]))
     await b.close()

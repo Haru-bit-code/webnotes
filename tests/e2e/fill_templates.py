@@ -76,7 +76,7 @@ async def desktop(p):
     ok("Select tool: the first tap picks the template up (to move or resize)", not await typing(pg) and await pg.locator("[data-handle]").count() == 1)
     await tap(pg, x0 + 300, y0 + 100); ok("Select tool: a second tap types in the cell", await typing(pg))
     await pg.keyboard.type("x"); await pg.keyboard.press("Escape")
-    sx, sy = await scr(pg, x0 + 2, y0 + 2)
+    sx, sy = await scr(pg, x0 + 2, y0 + 60)   # the table's left edge
     before = box(await els(pg))
     await pg.mouse.move(sx, sy); await pg.mouse.down(); await pg.mouse.move(sx + 60, sy + 40, steps=6); await pg.mouse.up(); await pg.wait_for_timeout(200)
     after = box(await els(pg))
@@ -130,6 +130,36 @@ async def phone(p):
     await pg.keyboard.type("Eggs"); await pg.keyboard.press("Escape")
     ok("phone: saved in the cell", any(e.get("text") == "Eggs" and e.get("wr") for e in await els(pg)))
     await pg.screenshot(path=f"{OUT}/fill-phone.png")
+
+    # the Wide Ruled page on a phone, as in the report: tap a line, write, tap a lower line, write more
+    await pg.goto(BASE); await pg.wait_for_timeout(600)
+    await pg.click(".list-head button:has-text('New')"); await pg.click(".new-menu .menu-item:has-text('Scribble page')"); await pg.wait_for_timeout(300)
+    await pg.fill("input[aria-label='Search templates']", "Wide Ruled"); await pg.wait_for_timeout(200)
+    await pg.locator(".lib-grid .layout-opt").first.click(); await pg.wait_for_timeout(1200)
+    E = await els(pg); R = sorted([e for e in E if e["t"] == "line" and e.get("lock") and abs(e["y2"] - e["y"]) < 1 and e["x2"] - e["x"] > 500 and e["x"] > 100], key=lambda e: e["y"])
+    gap = sorted(b["y"] - a["y"] for a, b in zip(R, R[1:]))[len(R) // 2]   # the line spacing (the header's underline isn't a writing line)
+    head = [e for e in E if e["t"] == "text" and e.get("text") == "Wide Ruled"][0]
+    await tap(pg, head["x"] + 500, head["y"] - 60, phone=True)
+    ok("phone, Wide Ruled: tapping the header opens no box", not await typing(pg))
+    await tap(pg, R[0]["x"] + 400, R[2]["y"] - gap * 0.4, phone=True)
+    ok("phone, Wide Ruled: a tap on a line puts the cursor there", await typing(pg))
+    look = await pg.evaluate("(()=>{const t=document.querySelector('.text-edit'),c=getComputedStyle(t);return {outline:c.outlineStyle,bg:c.backgroundColor,ph:t.placeholder,fs:parseFloat(c.fontSize)}})()")
+    ok("phone, Wide Ruled: no box, outline or 'Type here'", look["outline"] == "none" and look["bg"] in ("rgba(0, 0, 0, 0)", "transparent") and not look["ph"], str(look))
+    ok("phone, Wide Ruled: zoomed in so the writing is readable", look["fs"] >= 14, str(look["fs"]))
+    await pg.keyboard.type("Hello notebook")
+    sx, sy = await scr(pg, R[0]["x"] + 300, R[4]["y"] - gap * 0.4)
+    await pg.touchscreen.tap(sx, sy); await pg.wait_for_timeout(250)
+    ok("phone, Wide Ruled: tapping a lower line keeps writing in the same place", await typing(pg))
+    await pg.keyboard.type("second thought")
+    await pg.screenshot(path=f"{OUT}/fill-phone-ruled.png")
+    await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
+    W = written(await els(pg))
+    ok("phone, Wide Ruled: one piece of writing", len(W) == 1, str([w["text"] for w in W]))
+    if W:
+        L = W[0]["text"].split("\n"); t = W[0]
+        on = lambda txt, rule: abs((t["y"] + L.index(txt) * t["lh"]) - (rule["y"] - gap * 0.17)) < 3
+        ok("phone, Wide Ruled: each line sits on the rule that was tapped", "Hello notebook" in L and "second thought" in L and on("Hello notebook", R[2]) and on("second thought", R[4]), repr(t["text"]))
+    await pg.screenshot(path=f"{OUT}/fill-phone-ruled-done.png")
     ok("phone: no errors", not errs, ";".join(errs[:2]))
     await b.close()
 
